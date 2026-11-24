@@ -56,6 +56,22 @@ def get_laptop_subnet_prefix() -> str:
         return "192.168.1"
 
 
+def quick_check_oppo_connected() -> dict:
+    """Kiem tra tuc thi (<50ms) xem Oppo A57 da ket noi trong danh sach adb devices chua."""
+    _, out, _ = run_adb(["devices", "-l"], timeout=3)
+    lines = [ln.strip() for ln in out.splitlines()[1:] if ln.strip() and "\toffline" not in ln]
+    for ln in lines:
+        if "device " in ln:
+            serial = ln.split()[0]
+            return {"connected": True, "serial": serial, "mode": "USB" if ":" not in serial else "WIFI", "detail": ln}
+    return {
+        "connected": False,
+        "serial": None,
+        "mode": "NONE",
+        "detail": "Chưa kết nối Oppo A57. Hãy cắm cáp USB 1 lần (để khóa cổng 5555) hoặc bật Gỡ lỗi không dây rồi bấm 'Tự Động Tìm & Nối Oppo A57'.",
+    }
+
+
 def auto_connect_oppo(hint_ip: str = None) -> dict:
     """
     Ket noi Oppo A57 theo 3 tang tu dong (Khong can R630):

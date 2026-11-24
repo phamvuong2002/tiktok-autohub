@@ -34,6 +34,7 @@ from oppo_auto_poster import (
     ensure_correct_tiktok_account,
     execute_tiktok_post_flow,
     pair_oppo_wireless,
+    quick_check_oppo_connected,
 )
 
 PORT = 8099
@@ -96,7 +97,7 @@ class LaptopHubHandler(BaseHTTPRequestHandler):
 
         if parsed.path == "/api/status":
             cfg = get_settings()
-            oppo = auto_connect_oppo()
+            oppo = quick_check_oppo_connected()
             RUNTIME_STATE["oppo_status"] = oppo
             ledger = get_ledger_history(25)
             queue = []
