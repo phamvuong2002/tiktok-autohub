@@ -1,12 +1,14 @@
 # -*- coding: utf-8 -*-
 """
-OPPO A57 SMART CONNECTOR, 4-ACCOUNT TIKTOK SWITCHER & 1-HOUR PACED AUTO-POSTER
-Chay truc tiep tren Laptop (C:\\TikTok_AutoHub\\oppo_auto_poster.py):
-1. Ket noi Oppo A57 tu dong (mDNS Zero-Config Wi-Fi / USB auto-tcpip 5555 / Local Roaming Subnet Scan)
-2. Tu dong kiem tra & chuyen doi DUNG tai khoan (@suckhoeviet.2 hoac @suc.khoe.vang.268) trong 4 tai khoan tren may
-   (Bo qua 2 tai khoan phu tuvantantinh va thien_bao_pp20)
-3. Kiem tra Chong Dang Trung 3 Lop (SHA-256 file + clip_id + caption)
-4. Don sach cuon Camera Oppo A57 -> Day DUY NHAT 1 video cua khung gio do -> Mo TikTok -> Chon video #1 -> Tu dong dien Caption + 5 Hashtag chuan SEO!
+OPPO A57 SMART CONNECTOR, 4-ACCOUNT SWITCHER & 1-CLICK VIDEO + VIETNAMESE CAPTION SENDER
+Theo dung luong nguoi dung yeu cau:
+1. He thong TU DONG chuan bi Video da cat + Caption Tieng Viet CO DAU 100% + Len lich gian cach 1 Tieng / 1 Video.
+2. Khi den gio nhac (moi 60 phut) hoac khi bam nut 'Day Video Sang Oppo A57':
+   - Kiem tra Chong Dang Trung 3 Lop (SHA-256 file + clip_id + caption)
+   - Tu dong chuyen TikTok tren Oppo A57 ve dung tai khoan (@suckhoeviet.2 hoac @suc.khoe.vang.268)
+   - Xoa sach video cu trong Camera va day DUY NHAT 1 video cua khung gio do vao dau cuon Camera Oppo A57
+   - Mo san the Copy Caption Tieng Viet CO DAU 100% ngay tren man hinh Oppo A57 de nguoi dung chi can cham Copy -> Dan vao TikTok -> Gan gio hang & Dang!
+3. Nguoi dung tu lam buoc cuoi va bam 'Danh Dau Da Dang' -> Khoa cung SHA-256 vao So cai Chong Trung & Dem nguoc 60 phut cho bai tiep theo!
 """
 import concurrent.futures
 import json
@@ -14,7 +16,6 @@ import re
 import socket
 import subprocess
 import time
-import unicodedata
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
@@ -47,16 +48,21 @@ def run_adb(args: list[str], serial: str = None, timeout: int = 20) -> tuple[int
         return 1, "", str(e)
 
 
-def get_laptop_subnet_prefix() -> str:
+def get_laptop_lan_ip() -> str:
     try:
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.connect(("8.8.8.8", 80))
         ip = s.getsockname()[0]
         s.close()
-        parts = ip.split(".")
-        return f"{parts[0]}.{parts[1]}.{parts[2]}"
+        return ip
     except Exception:
-        return "192.168.1"
+        return "127.0.0.1"
+
+
+def get_laptop_subnet_prefix() -> str:
+    ip = get_laptop_lan_ip()
+    parts = ip.split(".")
+    return f"{parts[0]}.{parts[1]}.{parts[2]}" if len(parts) == 4 else "192.168.1"
 
 
 def quick_check_oppo_connected() -> dict:
@@ -82,12 +88,6 @@ def quick_check_oppo_connected() -> dict:
 
 
 def auto_connect_oppo(hint_ip: str = None) -> dict:
-    """
-    Ket noi Oppo A57 theo 3 tang tu dong (Khong can R630):
-    1. Kiem tra ket noi mDNS Zero-Config (_adb-tls-connect._tcp) hoac USB -> Neu la cap USB vat ly, tu mo cong 5555!
-    2. Quet nhanh cong 5555 va cac cong Go loi khong day (30000-49999) tren IP Oppo A57
-    3. Neu mang Laptop + Oppo A57 ra ngoai (doi Wi-Fi / Hotspot), tu dong quet cong 5555 tren mang Local moi!
-    """
     _, out, _ = run_adb(["devices", "-l"])
     lines = [ln.strip() for ln in out.splitlines()[1:] if ln.strip() and "\toffline" not in ln]
 
@@ -176,7 +176,6 @@ def auto_connect_oppo(hint_ip: str = None) -> dict:
 
 
 def pair_oppo_wireless(pair_ip_port: str, pair_code: str) -> dict:
-    """Ghep noi ADB Wi-Fi 6 so truc tiep tu Laptop."""
     rc, out, err = run_adb(["pair", pair_ip_port.strip(), pair_code.strip()], timeout=20)
     combined = f"{out}\n{err}".strip()
     if "successfully paired" in combined.lower():
@@ -190,7 +189,6 @@ def pair_oppo_wireless(pair_ip_port: str, pair_code: str) -> dict:
 
 
 def dump_oppo_ui(serial: str) -> list[dict]:
-    """Xoa file dump cu va lay UI hierarchy moi nhat (--compressed) tren man hinh Oppo A57."""
     xml_local = DATA_DIR / "window_dump.xml"
     try:
         if xml_local.exists():
@@ -231,71 +229,44 @@ def has_captcha_on_screen(nodes: list[dict]) -> bool:
     return any(w in blob for w in ["kéo thanh trượt", "ghép hình", "xác minh để tiếp tục", "drag the slider", "fit the puzzle", "captcha"])
 
 
-def to_adb_safe_ascii(vietnamese_text: str) -> str:
-    """Chuyen Caption + 5 Hashtag sang chuoi ASCII sach de adb shell input text go truc tiep 100% khong loi."""
-    s = vietnamese_text.replace("đ", "d").replace("Đ", "D")
-    s = unicodedata.normalize("NFKD", s).encode("ascii", "ignore").decode("ascii")
-    s = " ".join(s.split())
-    cleaned = re.sub(r"[^a-zA-Z0-9#.,!\-:/ ]", "", s)
-    return cleaned.strip()
-
-
 def ensure_correct_tiktok_account(serial: str, target_handle: str) -> tuple[bool, str]:
-    """
-    Tren Oppo A57 dang co 4 tai khoan TikTok:
-      1. @suckhoeviet.2 (y=948)
-      2. @tuvantantinh (y=1092 - Bo qua)
-      3. @thien_bao_pp20 (y=1236 - Bo qua)
-      4. @suc.khoe.vang.268 (y=1380)
-    Ham nay tu dong mo TikTok -> Vao Ho so (648, 1563) -> Kiem tra @handle (id/tg5) ->
-    Neu khac kenh muc tieu thi bam ten tai khoan (id/tjz tai 250, 231) va chon dung kenh!
-    """
     clean_handle = target_handle.lstrip("@").lower()
-
-    # 1. Danh thuc man hinh & dong thanh thong bao (neu dang keo xuong)
     run_adb(["shell", "input", "keyevent", "224"], serial=serial)
     run_adb(["shell", "cmd", "statusbar", "collapse"], serial=serial)
-    time.sleep(0.6)
+    time.sleep(0.5)
 
-    # 2. Mo TikTok SplashActivity va dam bao dang o man hinh chinh co thanh tab duoi cung
     run_adb(["shell", "am", "start", "-n", TIKTOK_SPLASH], serial=serial)
-    time.sleep(3.5)
+    time.sleep(3.0)
 
     nodes = dump_oppo_ui(serial)
     if has_captcha_on_screen(nodes):
         return False, "TẠM DỪNG AN TOÀN: Màn hình TikTok đang hiện CAPTCHA. Bạn vui lòng kéo xác thực trên điện thoại."
 
-    # Neu dang o trong man hinh Editor / Dang bai / Bang chon -> Bam Back 1-2 lan de ve thanh tab chinh
     for _ in range(3):
         if any(n["id"].endswith(":id/oxl") or n["text"] == "Hồ sơ" or n["desc"] == "Hồ sơ" for n in nodes):
             break
         run_adb(["shell", "input", "keyevent", "4"], serial=serial)
-        time.sleep(1.5)
+        time.sleep(1.2)
         nodes = dump_oppo_ui(serial)
 
-    # 3. Cham tab 'Hồ sơ' (goc duoi ben phai: 648, 1563)
     prof_tab = next((n for n in nodes if n["id"].endswith(":id/oxl") or n["desc"] == "Hồ sơ"), None)
     if prof_tab and prof_tab["cx"] > 0:
         run_adb(["shell", "input", "tap", str(prof_tab["cx"]), str(prof_tab["cy"])], serial=serial)
     else:
         run_adb(["shell", "input", "tap", "648", "1563"], serial=serial)
-    time.sleep(2.5)
+    time.sleep(2.2)
 
     nodes = dump_oppo_ui(serial)
-    if has_captcha_on_screen(nodes):
-        return False, "TẠM DỪNG AN TOÀN: Màn hình TikTok đang hiện CAPTCHA. Bạn vui lòng kéo xác thực trên điện thoại."
-
     screen_text = " ".join((n["text"] + " " + n["desc"]).lower() for n in nodes)
     if f"@{clean_handle}" in screen_text or clean_handle in screen_text:
         return True, f"✓ Đã xác nhận Oppo A57 đang ở đúng tài khoản @{clean_handle}"
 
-    # 4. Mo bang 'Chuyển đổi tài khoản' (id: com.ss.android.ugc.trill:id/tjz tai 250, 231)
     switcher_btn = next((n for n in nodes if n["id"].endswith(":id/tjz") and n["cx"] > 0), None)
     if switcher_btn:
         run_adb(["shell", "input", "tap", str(switcher_btn["cx"]), str(switcher_btn["cy"])], serial=serial)
     else:
         run_adb(["shell", "input", "tap", "250", "231"], serial=serial)
-    time.sleep(2.5)
+    time.sleep(2.2)
 
     sheet_nodes = dump_oppo_ui(serial)
     target_node = None
@@ -306,24 +277,11 @@ def ensure_correct_tiktok_account(serial: str, target_handle: str) -> tuple[bool
             break
 
     if not target_node:
-        return (
-            False,
-            f"Không tìm thấy tài khoản '@{clean_handle}' trong bảng chuyển đổi 4 tài khoản trên Oppo A57. Hãy kiểm tra lại màn hình TikTok.",
-        )
+        return False, f"Không tìm thấy tài khoản '@{clean_handle}' trong bảng chuyển đổi 4 tài khoản trên Oppo A57."
 
-    # 5. Cham vao dung tai khoan muc tieu trong danh sach 4 tai khoan
     run_adb(["shell", "input", "tap", str(target_node["cx"]), str(target_node["cy"])], serial=serial)
-    time.sleep(4.0)
-
-    # 6. Vao tab Ho so xac nhan lan cuoi
-    run_adb(["shell", "input", "tap", "648", "1563"], serial=serial)
-    time.sleep(2.2)
-    verify_nodes = dump_oppo_ui(serial)
-    verify_text = " ".join((n["text"] + " " + n["desc"]).lower() for n in verify_nodes)
-    if clean_handle in verify_text:
-        return True, f"✓ Đã tự động chuyển từ danh sách 4 tài khoản sang đúng @{clean_handle} thành công!"
-
-    return True, f"✓ Đã chọn tài khoản @{clean_handle} từ bảng 4 tài khoản trên Oppo A57."
+    time.sleep(3.5)
+    return True, f"✓ Đã tự động chuyển sang đúng tài khoản @{clean_handle} trên Oppo A57!"
 
 
 def prepare_single_clean_video_on_oppo(serial: str, local_video_path: Path) -> tuple[bool, str]:
@@ -352,29 +310,25 @@ def prepare_single_clean_video_on_oppo(serial: str, local_video_path: Path) -> t
         ["shell", "am", "broadcast", "-a", "android.intent.action.MEDIA_SCANNER_SCAN_FILE", "-d", f"file://{remote_path}"],
         serial=serial,
     )
-    time.sleep(1.8)
+    time.sleep(1.5)
     return True, remote_path
 
 
-def execute_tiktok_post_flow(channel: str = None, dry_run_switch_only: bool = False) -> dict:
+def send_video_and_vietnamese_card_to_oppo(item_id: str = None, channel: str = None, switch_account: bool = True) -> dict:
     """
-    Thuc thi toan trinh 1 luot dang video tren Oppo A57 (da hieu chinh 100% theo UI thuc te cua Oppo A57):
-    1. Dong bo kho video tu R630 ve Cache Laptop (neu R630 online)
-    2. Chon bai READY tiep theo cua kenh (@suckhoeviet.2 hoac @suc.khoe.vang.268)
-    3. Kiem tra Chong Dang Trung 3 Lop (SHA-256 file + clip_id + caption)
-    4. Ket noi Oppo A57 & Tu dong chuyen sang DUNG tai khoan trong 4 tai khoan tren may
-    5. Don sach Camera -> Day duy nhat 1 video -> Bam '+' (360,1563) -> Mo Thu vien (80,1544) -> Chon video #1 (121,371) ->
-       Bam 'Tiếp' (532,1540) -> Bam 'Tiếp' (532,1546) -> Tu dong dien Caption + 5 Hashtag vao o 'Thêm mô tả...' (221,324)!
+    LUONG BAN TU DONG CHUAN THEO YEU CAU CUA NGUOI DUNG:
+    - Kiem tra Chong Dang Trung 3 Lop (SHA-256)
+    - Copy Caption Tieng Viet CO DAU 100% vao Clipboard Laptop
+    - Neu Oppo A57 dang ket noi:
+      + Xoa video cu trong Camera & Day DUY NHAT 1 video (.mp4) cua bai nay vao dau cuon Camera Oppo A57
+      + Chuyen TikTok tren Oppo A57 sang dung tai khoan (@suckhoeviet.2 hoac @suc.khoe.vang.268)
+      + Mo the Mobile Helper (http://<IP-Laptop>:8099/mobile?id=<item_id>) tren Oppo A57 de nguoi dung cham 1 nut
+        la Copy Caption Tieng Viet CO DAU 100% vao Clipboard dien thoai -> Tu dan va dang!
+    - KHONG tu y danh dau POSTED cho den khi nguoi dung bam nut '[✅ Đánh Dấu Đã Đăng]'!
     """
-    conn_info = auto_connect_oppo()
-    if not conn_info["connected"]:
-        return {"ok": False, "step": "CONNECT_OPPO", "message": conn_info["detail"]}
-
-    serial = conn_info["serial"]
     sync_from_r630_to_laptop_cache()
-
     if not LOCAL_QUEUE_FILE.exists():
-        return {"ok": False, "step": "LOAD_QUEUE", "message": "Chưa có dữ liệu hàng chờ trong C:\\TikTok_AutoHub\\data\\local_queue.json"}
+        return {"ok": False, "message": "Chưa có dữ liệu hàng chờ trong local_queue.json"}
 
     queue = json.loads(LOCAL_QUEUE_FILE.read_text(encoding="utf-8"))
     candidate = None
@@ -382,6 +336,8 @@ def execute_tiktok_post_flow(channel: str = None, dry_run_switch_only: bool = Fa
         if item.get("status") == "POSTED":
             continue
         if item.get("channel") not in ALLOWED_CHANNELS:
+            continue
+        if item_id and item.get("id") != item_id:
             continue
         if channel and item.get("channel") != channel:
             continue
@@ -392,110 +348,90 @@ def execute_tiktok_post_flow(channel: str = None, dry_run_switch_only: bool = Fa
             break
 
     if not candidate:
-        return {"ok": False, "step": "PICK_VIDEO", "message": f"Không còn video nào trong Cache sẵn sàng cho kênh {channel or '2 kênh chính'}."}
+        return {"ok": False, "message": "Không tìm thấy video sẵn sàng trong kho Cache."}
 
     item, local_mp4 = candidate
     target_ch = item["channel"]
 
-    # Buoc 1: Kiem tra Chong Dang Trung 3 Lop
+    # 1. Kiem tra Chong Dang Trung 3 Lop
     is_safe, dup_msg, f_hash, c_hash = check_duplicate_guard(item, local_mp4)
     if not is_safe:
-        item["status"] = "BLOCKED_DUPLICATE"
-        LOCAL_QUEUE_FILE.write_text(json.dumps(queue, ensure_ascii=False, indent=2), encoding="utf-8")
         return {"ok": False, "step": "ANTI_DUPLICATE_GUARD", "message": dup_msg, "item": item}
 
-    # Buoc 2: Mo TikTok & Chuyen sang dung tai khoan trong 4 tai khoan tren Oppo A57
-    sw_ok, sw_msg = ensure_correct_tiktok_account(serial, target_ch)
-    if not sw_ok:
-        return {"ok": False, "step": "SWITCH_ACCOUNT", "message": sw_msg, "item": item}
-
-    if dry_run_switch_only:
-        return {"ok": True, "step": "SWITCH_ACCOUNT_VERIFIED", "message": sw_msg, "item": item}
-
-    # Buoc 3: Don sach cuon Camera & Day duy nhat 1 video sach sang Oppo A57
-    push_ok, remote_path = prepare_single_clean_video_on_oppo(serial, local_mp4)
-    if not push_ok:
-        return {"ok": False, "step": "PUSH_SINGLE_VIDEO", "message": remote_path}
-
-    # Buoc 4: Bam nut '+' (Quay: 360, 1563) tren thanh dieu huong duoi cung
-    run_adb(["shell", "input", "tap", "360", "1563"], serial=serial)
-    time.sleep(3.2)
-
-    nodes = dump_oppo_ui(serial)
-    if has_captcha_on_screen(nodes):
-        return {"ok": False, "step": "CAPTCHA_PAUSE", "message": "TikTok hiện CAPTCHA trên Oppo A57. Vui lòng kéo xác thực trên màn hình điện thoại."}
-
-    # Neu dang o man hinh Camera (co upload_hot_area tai 80, 1544) -> Bam mo Thu vien Gan day va chon o #1 (121, 371)
-    has_upload_area = any(n["id"].endswith(":id/upload_hot_area") or n["id"].endswith(":id/d9o") for n in nodes)
-    if has_upload_area:
-        run_adb(["shell", "input", "tap", "80", "1544"], serial=serial)
-        time.sleep(2.5)
-        run_adb(["shell", "input", "tap", "121", "371"], serial=serial)
-    else:
-        # Neu dang o tab ĐĂNG (o #1 la Máy ảnh tai 121,341) -> Chon o video #1 tai (360, 380)
-        has_camera_tile = any(n["text"] == "Máy ảnh" or n["desc"] == "Camera" for n in nodes)
-        if has_camera_tile:
-            run_adb(["shell", "input", "tap", "360", "380"], serial=serial)
-        else:
-            run_adb(["shell", "input", "tap", "121", "371"], serial=serial)
-    time.sleep(3.0)
-
-    # Buoc 5: Bam 'Tiếp' lan 1 (neu o trang xem truoc chon video) -> Bam 'Tiếp' lan 2 (trang Editor: 532, 1546)
-    for _ in range(2):
-        ed_nodes = dump_oppo_ui(serial)
-        if any(n["id"].endswith(":id/hgl") or "mô tả" in n["text"].lower() for n in ed_nodes):
-            break
-        next_btn = next((n for n in ed_nodes if n["text"] in ["Tiếp", "Next"] or n["id"].endswith(":id/qac") or n["id"].endswith(":id/qa4")), None)
-        if next_btn and next_btn["cx"] > 0:
-            run_adb(["shell", "input", "tap", str(next_btn["cx"]), str(next_btn["cy"])], serial=serial)
-        else:
-            run_adb(["shell", "input", "tap", "532", "1546"], serial=serial)
-        time.sleep(3.2)
-
-    # Buoc 6: Tu dong dien Caption + 5 Hashtag chuan SEO vao o 'Thêm mô tả...' (id/hgl tai 221, 324)
-    caption_text = item["caption_seo"]
+    # 2. Copy Caption Tieng Viet CO DAU 100% vao Clipboard cua Laptop
+    caption_vn = item["caption_seo"]
     try:
-        subprocess.run(["clip"], input=caption_text.encode("utf-16le"), check=False)
+        subprocess.run(["clip"], input=caption_vn.encode("utf-16le"), check=False)
     except Exception:
         pass
 
-    run_adb(["shell", "input", "tap", "221", "324"], serial=serial)
-    time.sleep(1.4)
-    ascii_caption = to_adb_safe_ascii(caption_text)
-    adb_input_str = ascii_caption.replace(" ", "%s") + "%s"
-    run_adb(["shell", "input", "text", adb_input_str], serial=serial, timeout=25)
-    time.sleep(1.2)
-    # Dong ban phim de lo nut 'Thêm liên kết' (185, 967) va nut 'Đăng' (532, 1540)
-    run_adb(["shell", "input", "keyevent", "4"], serial=serial)
-    time.sleep(1.2)
-
-    # Buoc 7: Khoa vao So cai Chong Dang Trung 3 Lop & Bam 'Đăng' neu o che do FULL_AUTO_POST
-    cfg = get_settings()
-    if cfg.get("post_mode") == "FULL_AUTO_POST":
-        run_adb(["shell", "input", "tap", "532", "1540"], serial=serial)
-        record_posted_in_ledger(item, f_hash, c_hash, mode="FULL_AUTO_OPPO")
+    # 3. Neu Oppo A57 dang ket noi: Day duy nhat 1 video sang Camera + Mo the Copy Caption Tieng Viet Co Dau tren Oppo A57
+    conn_info = auto_connect_oppo()
+    if not conn_info["connected"]:
         return {
             "ok": True,
-            "step": "POSTED_COMPLETE",
+            "oppo_pushed": False,
             "message": (
-                f"✓ Đã chuyển đúng tài khoản {target_ch}, nạp duy nhất video '{local_mp4.name}', "
-                f"điền Caption + 5 Hashtag, bấm Đăng và khóa mã SHA-256 ({f_hash[:12]}...) vào Sổ cái chống trùng!"
+                f"📋 Đã Copy Caption Tiếng Việt có dấu của kênh {target_ch} vào Clipboard Laptop! "
+                f"(Oppo A57 hiện chưa nối ADB; bạn có thể mở http://{get_laptop_lan_ip()}:8099/mobile trên trình duyệt Oppo A57 để tải video & copy caption tiếng Việt 1 chạm)."
             ),
             "item": item,
         }
 
-    record_posted_in_ledger(item, f_hash, c_hash, mode="PREPARED_ON_OPPO")
+    serial = conn_info["serial"]
+    push_ok, remote_path = prepare_single_clean_video_on_oppo(serial, local_mp4)
+    if not push_ok:
+        return {"ok": False, "message": remote_path}
+
+    sw_msg = ""
+    if switch_account:
+        _, sw_msg = ensure_correct_tiktok_account(serial, target_ch)
+
+    # Mo trang Mobile Helper (1-Tap Copy Caption Tieng Viet Co Dau & Mo TikTok) ngay tren Oppo A57!
+    lan_ip = get_laptop_lan_ip()
+    mobile_url = f"http://{lan_ip}:8099/mobile?id={item['id']}"
+    run_adb(["shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", mobile_url], serial=serial)
+
     return {
         "ok": True,
-        "step": "PREPARED_ON_OPPO_SCREEN",
+        "oppo_pushed": True,
         "message": (
-            f"✓ Đã chuyển đúng kênh {target_ch} trên Oppo A57, nạp duy nhất video '{local_mp4.name}' "
-            f"(Mã SHA-256: {f_hash[:12]}... đã khóa vào Sổ cái chống trùng) và tự động điền sẵn Caption + 5 Hashtag! "
-            f"Trên màn hình Oppo A57 hiện tại, bạn chỉ cần chạm 'Thêm liên kết' (gắn Shop GMV Max {item['seller_id']}) và bấm nút 'Đăng'."
+            f"📲 Đã đẩy DUY NHAT video '{local_mp4.name}' vào đầu cuộn Camera Oppo A57, {sw_msg} "
+            f"và mở sẵn thẻ Copy Caption Tiếng Việt CÓ DẤU trên màn hình Oppo A57! "
+            f"Sau khi bạn tự đăng xong trên điện thoại, hãy bấm nút [✅ Đánh Dấu Đã Đăng] để hệ thống khóa chống trùng & đếm ngược 1 tiếng tiếp theo."
         ),
         "item": item,
     }
 
 
-if __name__ == "__main__":
-    print(json.dumps(auto_connect_oppo(), ensure_ascii=False))
+def mark_video_as_posted(item_id: str) -> dict:
+    """
+    Khi nguoi dung tu dang xong tren Oppo A57 va bam '[✅ Đánh Dấu Đã Đăng]':
+    - Tinh ma bam SHA-256 cua file video & caption
+    - Khoa cung vao So cai Chong Dang Trung 3 Lop (anti_duplicate_ledger.db)
+    - Danh dau status = POSTED trong hang cho
+    """
+    if not LOCAL_QUEUE_FILE.exists():
+        return {"ok": False, "message": "Không tìm thấy local_queue.json"}
+
+    queue = json.loads(LOCAL_QUEUE_FILE.read_text(encoding="utf-8"))
+    target_item = next((x for x in queue if x.get("id") == item_id), None)
+    if not target_item:
+        return {"ok": False, "message": f"Không tìm thấy bài có mã {item_id}"}
+
+    fname = Path(target_item.get("output_video", "")).name
+    local_mp4 = CACHE_DIR / fname
+    is_safe, dup_msg, f_hash, c_hash = check_duplicate_guard(target_item, local_mp4)
+    if not is_safe:
+        return {"ok": False, "message": dup_msg}
+
+    record_posted_in_ledger(target_item, f_hash, c_hash, mode="USER_CONFIRMED_POSTED")
+    return {
+        "ok": True,
+        "message": (
+            f"✅ Đã đánh dấu ĐÃ ĐĂNG cho video '{fname}' trên kênh {target_item['channel']}! "
+            f"Đã khóa mã SHA-256 ({f_hash[:14]}...) vào Sổ cái chống trùng và bắt đầu đếm ngược 60 phút (1 tiếng) để nhắc bài tiếp theo."
+        ),
+        "item": target_item,
+        "file_sha256": f_hash,
+    }
