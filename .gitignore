@@ -1,0 +1,14 @@
+# Ignore binary tools, cached rendered videos, and runtime databases
+tools/
+video_cache/
+*.mp4
+*.wav
+*.flac
+*.zip
+*.db
+*.db-journal
+data/window_dump.xml
+data/local_queue.json
+__pycache__/
+*.pyc
+.env

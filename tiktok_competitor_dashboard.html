@@ -1,0 +1,1467 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>TikTok Affiliate Audit Dashboard — Dark Mode</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body, button, input, select, textarea, pre {
+      font-family: "Segoe UI Variable Text", "Segoe UI", "Inter", "Roboto", -apple-system, BlinkMacSystemFont, "Helvetica Neue", Arial, sans-serif;
+      text-rendering: optimizeLegibility;
+      -webkit-font-smoothing: antialiased;
+    }
+    body {
+      background-color: #090e1a;
+      background-image:
+        radial-gradient(ellipse 80% 50% at 15% 0%, rgba(56, 189, 248, 0.10), transparent 55%),
+        radial-gradient(ellipse 70% 45% at 85% 5%, rgba(129, 140, 248, 0.10), transparent 55%);
+      color: #e2e8f0;
+      font-size: 14px;
+      line-height: 1.55;
+      min-height: 100vh;
+    }
+
+    /* Layout & Containers */
+    .container { max-width: 1320px; margin: 0 auto; padding: 20px 18px 40px; display: flex; flex-direction: column; gap: 18px; }
+    .card {
+      background: linear-gradient(180deg, #11192c 0%, #0f172a 100%);
+      border: 1px solid #1e293b;
+      border-radius: 14px;
+      padding: 18px 20px;
+      box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
+    }
+    .sub-card {
+      background: #0b1222;
+      border: 1px solid #1e293b;
+      border-radius: 10px;
+      padding: 12px 14px;
+    }
+    .hidden { display: none !important; }
+
+    /* Grids & Flex */
+    .flex { display: flex; }
+    .flex-col { display: flex; flex-direction: column; }
+    .flex-wrap { flex-wrap: wrap; }
+    .items-center { align-items: center; }
+    .items-start { align-items: flex-start; }
+    .justify-between { justify-content: space-between; }
+    .justify-center { justify-content: center; }
+    .gap-1 { gap: 6px; }
+    .gap-2 { gap: 10px; }
+    .gap-3 { gap: 14px; }
+    .gap-4 { gap: 18px; }
+
+    .grid-kpi { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+    .grid-12 { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; }
+    .grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+    .grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+    .grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .col-7 { grid-column: span 7; }
+    .col-6 { grid-column: span 6; }
+    .col-5 { grid-column: span 5; }
+
+    @media (max-width: 1080px) {
+      .grid-kpi { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+      .grid-4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .col-7, .col-6, .col-5 { grid-column: span 12; }
+    }
+    @media (max-width: 680px) {
+      .grid-kpi, .grid-4, .grid-3, .grid-2 { grid-template-columns: 1fr; }
+    }
+
+    /* Typography */
+    h1 { font-size: 22px; font-weight: 700; color: #f8fafc; letter-spacing: -0.015em; line-height: 1.3; }
+    h2 { font-size: 16px; font-weight: 700; color: #f8fafc; line-height: 1.35; }
+    h3 { font-size: 15px; font-weight: 700; color: #f8fafc; line-height: 1.35; }
+    .muted { color: #94a3b8; font-size: 13px; }
+    .small { font-size: 13px; }
+    .num { font-variant-numeric: tabular-nums; font-weight: 700; }
+    .kpi-val { font-size: 24px; font-weight: 800; font-variant-numeric: tabular-nums; line-height: 1.25; margin: 6px 0; }
+    .kpi-sub { font-size: 12.5px; color: #94a3b8; padding-top: 8px; border-top: 1px solid #1e293b; margin-top: 8px; }
+
+    /* Badges & Pills */
+    .badge {
+      display: inline-flex; align-items: center; gap: 5px;
+      padding: 3px 10px; border-radius: 9999px; font-size: 12px; font-weight: 600;
+      border: 1px solid #334155; background: rgba(30, 41, 59, 0.7); color: #cbd5e1;
+    }
+    .badge-cyan { border-color: rgba(56, 189, 248, 0.45); background: rgba(56, 189, 248, 0.14); color: #7dd3fc; }
+    .badge-green { border-color: rgba(52, 211, 153, 0.45); background: rgba(16, 185, 129, 0.16); color: #6ee7b7; }
+    .badge-red { border-color: rgba(251, 113, 133, 0.45); background: rgba(244, 63, 94, 0.16); color: #fda4af; }
+    .badge-amber { border-color: rgba(251, 191, 36, 0.45); background: rgba(245, 158, 11, 0.16); color: #fcd34d; }
+    .badge-indigo { border-color: rgba(129, 140, 248, 0.45); background: rgba(99, 102, 241, 0.18); color: #c7d2fe; }
+
+    .dot { width: 10px; height: 10px; border-radius: 9999px; display: inline-block; flex-shrink: 0; }
+
+    /* Buttons & Inputs */
+    .btn {
+      padding: 7px 13px; border-radius: 8px; border: 1px solid #2a3954;
+      background: #131d33; color: #cbd5e1; font-size: 13px; font-weight: 600;
+      cursor: pointer; transition: all 0.18s ease; display: inline-flex; align-items: center; gap: 6px;
+    }
+    .btn:hover { border-color: #6366f1; color: #f8fafc; background: #1a2744; }
+    .btn.active, .btn-primary {
+      background: linear-gradient(135deg, #4f46e5, #6366f1);
+      border-color: #818cf8; color: #ffffff;
+      box-shadow: 0 2px 12px rgba(99, 102, 241, 0.35);
+    }
+    .btn-primary:hover { filter: brightness(1.1); }
+    .ch-toggle.off { opacity: 0.42; background: #0b1120; border-color: #1e293b; }
+
+    select, input[type="text"] {
+      background: #0b1222; color: #f1f5f9; border: 1px solid #334155;
+      border-radius: 8px; padding: 6px 10px; font-size: 13px; outline: none;
+    }
+    select:focus, input[type="text"]:focus { border-color: #818cf8; }
+    input[type="range"] { width: 100%; accent-color: #818cf8; cursor: pointer; height: 6px; }
+    input[type="checkbox"] { width: 17px; height: 17px; accent-color: #818cf8; cursor: pointer; }
+
+    /* Tabs bar */
+    .tabs-bar {
+      display: flex; flex-wrap: wrap; gap: 8px;
+      margin-top: 16px; padding-top: 14px; border-top: 1px solid #1e293b;
+    }
+    .tab-btn {
+      padding: 8px 14px; border-radius: 9px; border: 1px solid #26344e;
+      background: #0c1426; color: #94a3b8; font-size: 13px; font-weight: 600;
+      cursor: pointer; transition: all 0.18s ease;
+    }
+    .tab-btn:hover { color: #f1f5f9; border-color: #475569; background: #142038; }
+    .tab-btn.active {
+      background: linear-gradient(135deg, #4f46e5, #2563eb);
+      color: #ffffff; border-color: #60a5fa;
+      box-shadow: 0 4px 14px rgba(59, 130, 246, 0.32);
+    }
+
+    /* Progress & Bars */
+    .bar-track {
+      width: 100%; height: 12px; border-radius: 9999px;
+      background: #090e1a; border: 1px solid #1e293b; overflow: hidden;
+    }
+    .bar-fill { height: 100%; border-radius: 9999px; transition: width 0.35s ease; }
+
+    /* Tables */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; }
+    thead th {
+      padding: 10px 10px; color: #94a3b8; font-weight: 600;
+      border-bottom: 1px solid #24324a; white-space: nowrap; background: #0c1425;
+    }
+    thead th.sortable { cursor: pointer; }
+    thead th.sortable:hover { color: #f8fafc; }
+    tbody td { padding: 10px 10px; border-bottom: 1px solid #182338; vertical-align: middle; }
+    tbody tr:hover { background: rgba(51, 65, 85, 0.25); }
+    .text-right { text-align: right; }
+    .text-center { text-align: center; }
+
+    /* Canvas */
+    canvas { display: block; width: 100%; border-radius: 10px; background: #090f1d; border: 1px solid #1e293b; }
+
+    /* Insight Callout */
+    .insight-box {
+      background: rgba(56, 189, 248, 0.08);
+      border: 1px solid rgba(56, 189, 248, 0.28);
+      border-left: 4px solid #38bdf8;
+      border-radius: 9px; padding: 11px 14px; font-size: 13px; color: #cbd5e1;
+    }
+
+    /* Checklist & Pre */
+    .check-item {
+      display: flex; align-items: flex-start; gap: 12px;
+      padding: 13px 15px; border-radius: 12px;
+      background: #0e1629; border: 1px solid #1e293b;
+      cursor: pointer; transition: all 0.16s ease;
+    }
+    .check-item:hover { border-color: #6366f1; background: #131f38; }
+    .check-item.done { opacity: 0.62; border-color: rgba(52, 211, 153, 0.4); }
+    .line-through { text-decoration: line-through; color: #94a3b8; }
+
+    pre.tpl-pre {
+      white-space: pre-wrap; word-break: break-word;
+      background: #090e1a; border: 1px solid #26344e; border-radius: 9px;
+      padding: 11px 13px; font-size: 13px; line-height: 1.55; color: #e2e8f0;
+    }
+    .tpl-cover-preview {
+      background: linear-gradient(135deg, #fde047, #facc15);
+      color: #0f172a; font-weight: 800; font-size: 13.5px; line-height: 1.45;
+      padding: 11px 14px; border-radius: 9px; text-align: center;
+      box-shadow: 0 4px 14px rgba(250, 204, 21, 0.2);
+      white-space: pre-wrap;
+    }
+
+    /* Tooltip */
+    .tooltip-box {
+      position: fixed; z-index: 999; pointer-events: none; display: none;
+      background: #0f172a; color: #f1f5f9;
+      border: 1px solid #38bdf8; border-radius: 10px;
+      padding: 10px 13px; font-size: 13px; line-height: 1.45;
+      max-width: 310px; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6);
+    }
+
+    .section-space { display: flex; flex-direction: column; gap: 16px; }
+    .row-space { display: flex; flex-direction: column; gap: 10px; }
+    .mt-1 { margin-top: 4px; }
+    .mt-2 { margin-top: 8px; }
+    .mt-3 { margin-top: 12px; }
+    .mb-2 { margin-bottom: 8px; }
+    .mb-3 { margin-bottom: 12px; }
+
+    ::-webkit-scrollbar { height: 7px; width: 7px; }
+    ::-webkit-scrollbar-track { background: #090e1a; }
+    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 9999px; }
+  </style>
+</head>
+<body>
+  <div id="tooltip" class="tooltip-box"></div>
+
+  <div class="container">
+    <!-- ==================== HEADER ==================== -->
+    <header class="card">
+      <div class="flex flex-wrap justify-between items-start gap-4">
+        <div>
+          <div class="flex flex-wrap items-center gap-2 mb-2">
+            <span class="badge badge-cyan">Dữ liệu thực tế Chrome Audit · 23/11/2026</span>
+            <span class="badge badge-indigo">Ngành TPCN · Nguồn Bác Chường</span>
+          </div>
+          <h1>Báo cáo Đối chiếu Đa chiều 4 Kênh TikTok Affiliate</h1>
+          <p class="muted mt-1">
+            So sánh <strong style="color:#38bdf8">@baovesuckhoe2424</strong> &amp; <strong style="color:#34d399">@phongbenhthayvichuabenh</strong> (Đối thủ)
+            với <strong style="color:#fb7185">@suc.khoe.vang.268</strong> &amp; <strong style="color:#fbbf24">@suckhoeviet.2</strong> (Kênh bạn)
+          </p>
+        </div>
+
+        <div class="flex-col gap-2" style="align-items:flex-end;">
+          <div class="flex flex-wrap items-center gap-1">
+            <span class="muted" style="margin-right:4px;">Bộ lọc nhanh:</span>
+            <button data-preset="all" class="preset-btn btn active">Cả 4 kênh</button>
+            <button data-preset="competitor" class="preset-btn btn">2 Đối thủ</button>
+            <button data-preset="mine" class="preset-btn btn">2 Kênh bạn</button>
+          </div>
+          <div id="channelToggles" class="flex flex-wrap gap-1"></div>
+        </div>
+      </div>
+
+      <nav class="tabs-bar">
+        <button data-tab="overview" class="tab-btn active">1. Tổng quan &amp; Sức khỏe kênh</button>
+        <button data-tab="multidim" class="tab-btn">2. Phân tích Đa chiều &amp; Nhịp đăng</button>
+        <button data-tab="gmv" class="tab-btn">3. Ma trận GMV Max &amp; Soi Video</button>
+        <button data-tab="simulator" class="tab-btn">4. Mô phỏng Đơn hàng &amp; Hoa hồng</button>
+        <button data-tab="action" class="tab-btn">5. Insight &amp; Kế hoạch 7 ngày</button>
+      </nav>
+    </header>
+
+    <!-- ==================== TAB 1: OVERVIEW ==================== -->
+    <section id="tab-overview" class="tab-panel section-space">
+      <div id="kpiGrid" class="grid-kpi"></div>
+
+      <div class="grid-12">
+        <div class="card col-7 row-space">
+          <div class="flex flex-wrap justify-between items-center gap-2">
+            <div>
+              <h2>So sánh hiệu suất theo từng chiều chỉ số</h2>
+              <p class="muted">Chọn chiều đo để thấy rõ khoảng cách tốc độ tăng trưởng thực</p>
+            </div>
+            <select id="barMetricSelect">
+              <option value="followersPerMonth">Tốc độ tăng Follower / tháng</option>
+              <option value="likesPerMonth">Tốc độ tăng Like / tháng</option>
+              <option value="medianRecentViews">Median View (16 video mới nhất)</option>
+              <option value="pinnedTotalViews">Tổng View 3 video ghim (Social Proof)</option>
+              <option value="cleanFollowerPct">Tỷ lệ Follower sạch (không chéo %)</option>
+              <option value="healthScore">Điểm sức khỏe kênh tổng hợp (/100)</option>
+              <option value="likesPerVideo">Trung bình Like / Video</option>
+              <option value="videosPerMonth">Tần suất sản xuất (Video / tháng)</option>
+            </select>
+          </div>
+          <div id="metricBarChart" class="row-space mt-2"></div>
+          <div id="metricInsightBox" class="insight-box mt-2"></div>
+        </div>
+
+        <div class="card col-5 flex-col justify-between gap-2">
+          <div>
+            <h2>Radar 6 trụ cột thuật toán TikTok Shop</h2>
+            <p class="muted">Đối chiếu năng lực phân phối tự nhiên + khả năng được GMV Max chọn đẩy</p>
+          </div>
+          <div class="flex justify-center mt-1">
+            <canvas id="radarCanvas" width="400" height="300" style="max-width:400px;"></canvas>
+          </div>
+          <div id="radarLegend" class="flex flex-wrap justify-center gap-3 small mt-1" style="padding-top:10px; border-top:1px solid #1e293b;"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="mb-3">
+          <h2>Bảng đối chiếu toàn diện 4 kênh (Click tiêu đề cột để sắp xếp)</h2>
+          <p class="muted">Các ô màu đỏ cảnh báo nguyên nhân trực tiếp làm tụt view &amp; đơn hàng</p>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th class="sortable" data-sort="handle">Kênh ⇅</th>
+                <th class="sortable" data-sort="ageMonths">Tuổi kênh ⇅</th>
+                <th class="sortable" data-sort="followersPerMonth">Flw/tháng ⇅</th>
+                <th class="sortable" data-sort="cleanFollowerPct">Tệp sạch ⇅</th>
+                <th class="sortable" data-sort="pinnedTotalViews">View 3 Ghim ⇅</th>
+                <th class="sortable" data-sort="medianRecentViews">Median 16 mới ⇅</th>
+                <th class="sortable" data-sort="captionRate">% Có Caption ⇅</th>
+                <th class="sortable" data-sort="uploadGapMin">Giãn cách đăng ⇅</th>
+                <th class="sortable" data-sort="aiLabel">Nhãn AI TikTok ⇅</th>
+                <th class="sortable" data-sort="healthScore">Điểm /100 ⇅</th>
+              </tr>
+            </thead>
+            <tbody id="scorecardBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== TAB 2: MULTI-DIMENSIONAL ==================== -->
+    <section id="tab-multidim" class="tab-panel hidden section-space">
+      <div class="card section-space">
+        <div class="flex flex-wrap justify-between items-center gap-3">
+          <div>
+            <h2>Bộ xoay đa chiều (Interactive Pivot Explorer)</h2>
+            <p class="muted">Tự do nhóm 14 video soi sâu theo nhiều chiều để đo chính xác nhân tố tạo khác biệt lớn nhất</p>
+          </div>
+          <div class="flex flex-wrap items-center gap-2 small">
+            <label class="flex items-center gap-1 muted">
+              Nhóm theo:
+              <select id="pivotGroupBy">
+                <option value="group">Nhóm (Đối thủ vs Kênh bạn)</option>
+                <option value="isAd">Trạng thái GMV Max (isAd)</option>
+                <option value="seller">Mã Shop gắn giỏ (seller_id)</option>
+                <option value="aiLabel">Nhãn AI phân loại (diversification)</option>
+                <option value="hasCaption">Có Caption &amp; Hashtag hay trống</option>
+                <option value="durationBucket">Khung thời lượng cắt video</option>
+                <option value="productLine">Dòng sản phẩm</option>
+                <option value="channel">Từng kênh cụ thể</option>
+              </select>
+            </label>
+            <label class="flex items-center gap-1 muted">
+              Chỉ số đo:
+              <select id="pivotMetric">
+                <option value="avgViews">View trung bình</option>
+                <option value="medianViews">View trung vị (Median)</option>
+                <option value="engRate">Tỷ lệ tương tác (%)</option>
+                <option value="saveShareRate">Lưu + Chia sẻ / 1.000 View</option>
+                <option value="avgDuration">Thời lượng trung bình (giây)</option>
+                <option value="avgHashtags">Số Hashtag trung bình</option>
+              </select>
+            </label>
+          </div>
+        </div>
+
+        <div class="grid-12">
+          <div id="pivotChartArea" class="col-6 row-space"></div>
+          <div class="col-6 table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Phân nhóm</th>
+                  <th class="text-right">Mẫu</th>
+                  <th class="text-right">Avg Views</th>
+                  <th class="text-right">Median Views</th>
+                  <th class="text-right">Tương tác</th>
+                  <th class="text-right">Avg Giây</th>
+                </tr>
+              </thead>
+              <tbody id="pivotTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="grid-12">
+        <div class="card col-7 row-space">
+          <div>
+            <h2>Biểu đồ "Xả bài theo phút" (Đợt đăng 21–22/11)</h2>
+            <p class="muted">Trục ngang: phút tính từ bài đầu đợt · Độ lớn chấm: lượt xem · Di chuột vào chấm để xem chi tiết</p>
+          </div>
+          <canvas id="burstCanvas" width="700" height="275"></canvas>
+          <div class="grid-3 small">
+            <div class="sub-card" style="border-left:3px solid #34d399;">
+              <div style="font-weight:700; color:#34d399;">@phongbenhthayvichuabenh</div>
+              <div class="muted mt-1">14 bài / 107 phút (~4–5p/bài), đủ 5 hashtag → <strong style="color:#6ee7b7;">100% bài đạt 667–11.000 view</strong></div>
+            </div>
+            <div class="sub-card" style="border-left:3px solid #fb7185;">
+              <div style="font-weight:700; color:#fb7185;">@suc.khoe.vang.268</div>
+              <div class="muted mt-1">14 bài / 15 phút (cách 10–60s!), 0 caption → <strong style="color:#fda4af;">dính bài 0 view, median 135 view</strong></div>
+            </div>
+            <div class="sub-card" style="border-left:3px solid #fbbf24;">
+              <div style="font-weight:700; color:#fbbf24;">@suckhoeviet.2</div>
+              <div class="muted mt-1">13 bài / 15 phút, 0 caption → <strong style="color:#fcd34d;">hàng loạt bài tụt còn 19–125 view</strong></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card col-5 row-space">
+          <div>
+            <h2>Tương quan 2 chiều (14 video soi sâu)</h2>
+            <p class="muted">Trục Y thang log để so sánh trực quan cả bài 85 view và 2.7M view</p>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <select id="scatterX">
+              <option value="duration">Trục X: Thời lượng video (giây)</option>
+              <option value="hashtags">Trục X: Số lượng Hashtag</option>
+              <option value="descLen">Trục X: Độ dài Caption (ký tự)</option>
+              <option value="saveShareRate">Trục X: Lưu+Share / 1.000 View</option>
+            </select>
+            <select id="scatterColor">
+              <option value="channel">Màu theo: Kênh</option>
+              <option value="isAd">Màu theo: GMV Max (isAd)</option>
+              <option value="aiLabel">Màu theo: Nhãn AI TikTok</option>
+            </select>
+          </div>
+          <canvas id="scatterCanvas" width="460" height="275"></canvas>
+          <div id="scatterLegend" class="flex flex-wrap justify-center gap-3 small"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== TAB 3: GMV MAX & VIDEO AUDIT ==================== -->
+    <section id="tab-gmv" class="tab-panel hidden section-space">
+      <div class="card row-space">
+        <div>
+          <h2>Bằng chứng quyết định: Mã Shop gắn giỏ (`seller_id`) &amp; Cờ Quảng cáo GMV Max (`isAd`)</h2>
+          <p class="muted">Cùng 1 sản phẩm (ví dụ Bổ khớp Chondro-Aid Pháp), gắn sai shop không bật GMV Max sẽ mất hoàn toàn nguồn đẩy tiền tự động từ nhà bán hàng</p>
+        </div>
+        <div id="sellerCards" class="grid-4 mt-1"></div>
+      </div>
+
+      <div class="card row-space">
+        <div class="flex flex-wrap justify-between items-center gap-2">
+          <div>
+            <h2>Kho dữ liệu 14 video soi sâu JSON gốc (Lọc &amp; Sắp xếp)</h2>
+            <p class="muted">Trích xuất trực tiếp `isAd`, `seller_id`, `diversificationLabels`, `duration`, `stats` từ TikTok</p>
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <select id="vidFilterAd">
+              <option value="all">Tất cả isAd</option>
+              <option value="true">Chỉ isAd: true (GMV Max)</option>
+              <option value="false">Chỉ isAd: false (Không Ads)</option>
+            </select>
+            <select id="vidFilterProduct">
+              <option value="all">Tất cả dòng SP</option>
+              <option value="Canxi">Canxi hữu cơ</option>
+              <option value="Bổ khớp">Bổ khớp Chondro-Aid</option>
+              <option value="Omega 3">Omega 3</option>
+              <option value="Collagen">Collagen CH-Alpha</option>
+              <option value="Dưỡng tóc">Biotin Dưỡng tóc</option>
+            </select>
+            <input id="vidSearch" type="text" placeholder="Tìm sản phẩm / shop..." style="width:185px;" />
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Kênh</th>
+                <th>Sản phẩm &amp; Ngày đăng</th>
+                <th class="text-right sortable" data-vsort="views">Views ⇅</th>
+                <th class="text-right sortable" data-vsort="likes">Likes ⇅</th>
+                <th class="text-right sortable" data-vsort="saveShare">Lưu+Share ⇅</th>
+                <th class="text-right sortable" data-vsort="duration">Giây ⇅</th>
+                <th class="text-center">isAd</th>
+                <th>Shop (`seller_id`)</th>
+                <th>Nhãn AI</th>
+                <th class="text-right">Hashtag</th>
+              </tr>
+            </thead>
+            <tbody id="videoTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== TAB 4: SIMULATOR ==================== -->
+    <section id="tab-simulator" class="tab-panel hidden section-space">
+      <div class="grid-12">
+        <div class="card col-5 section-space">
+          <div>
+            <h2>Bộ giả lập "Nếu khắc phục" (What-If Calculator)</h2>
+            <p class="muted">Kéo các thanh trượt để tính toán mức tăng View, Đơn hàng và Hoa hồng Affiliate/tháng cho 2 kênh của bạn</p>
+          </div>
+
+          <div class="flex flex-wrap gap-2">
+            <button id="simPresetCurrent" class="btn">Trạng thái hiện tại</button>
+            <button id="simPresetFix7d" class="btn btn-primary">Chuẩn hóa sau 7 ngày</button>
+            <button id="simPresetTarget" class="btn">Mục tiêu ngang đối thủ</button>
+          </div>
+
+          <div class="row-space small">
+            <div class="sub-card">
+              <div class="flex justify-between mb-2"><span class="muted">Số video đăng / ngày (tổng 2 kênh)</span><strong id="valVidDay" class="num" style="color:#38bdf8;">10 video</strong></div>
+              <input id="simVidDay" type="range" min="2" max="20" value="10" />
+            </div>
+            <div class="sub-card">
+              <div class="flex justify-between mb-2"><span class="muted">Tỷ lệ bài đủ Caption SEO + 5 Tag + Giãn ≥5p</span><strong id="valSeoPct" class="num" style="color:#34d399;">100%</strong></div>
+              <input id="simSeoPct" type="range" min="0" max="100" step="10" value="100" />
+            </div>
+            <div class="sub-card">
+              <div class="flex justify-between mb-2"><span class="muted">Tỷ lệ gắn đúng Shop GMV Max (`isAd: true`)</span><strong id="valGmvPct" class="num" style="color:#a78bfa;">100%</strong></div>
+              <input id="simGmvPct" type="range" min="0" max="100" step="10" value="100" />
+            </div>
+            <div class="sub-card">
+              <div class="flex justify-between mb-2"><span class="muted">Thời lượng cắt trung bình (tối ưu 35–60s)</span><strong id="valDuration" class="num" style="color:#fbbf24;">50 giây</strong></div>
+              <input id="simDuration" type="range" min="25" max="120" step="5" value="50" />
+            </div>
+            <label class="sub-card flex justify-between items-center" style="cursor:pointer;">
+              <span style="color:#e2e8f0; font-weight:600;">Ghim 3 video trăm nghìn/triệu view + Bìa vàng</span>
+              <input id="simPinned" type="checkbox" checked />
+            </label>
+            <div class="sub-card">
+              <div class="flex justify-between mb-2"><span class="muted">Giá trị đơn hàng trung bình (TPCN nhập khẩu)</span><strong id="valAov" class="num" style="color:#f8fafc;">450.000 ₫</strong></div>
+              <input id="simAov" type="range" min="200000" max="900000" step="50000" value="450000" />
+            </div>
+            <div class="sub-card">
+              <div class="flex justify-between mb-2"><span class="muted">Hoa hồng Affiliate trung bình (%)</span><strong id="valComm" class="num" style="color:#34d399;">12%</strong></div>
+              <input id="simComm" type="range" min="5" max="25" step="1" value="12" />
+            </div>
+          </div>
+        </div>
+
+        <div class="col-7 section-space">
+          <div id="simOutputs" class="grid-2"></div>
+          <div class="card row-space">
+            <h3>Đóng góp mức tăng trưởng theo từng điểm khắc phục (Waterfall)</h3>
+            <div id="simBreakdown" class="row-space small mt-1"></div>
+            <p class="muted mt-2" style="padding-top:10px; border-top:1px solid #1e293b;">
+              *Mô hình ước tính dựa trên độ chênh lệch median view thực tế giữa 2 nhóm kênh (135–182 view khi xả bài không caption vs 859–1.043 view nền + xác suất bài bật 11K–200K khi đủ SEO &amp; Shop GMV Max) và tỷ lệ chuyển đổi tham chiếu ngành TPCN TikTok Shop (CTR giỏ 1,2%–2,6%; CR chốt đơn 2,5%–4,2%).
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ==================== TAB 5: ACTION PLAN ==================== -->
+    <section id="tab-action" class="tab-panel hidden section-space">
+      <div class="card">
+        <div class="flex flex-wrap justify-between items-center gap-3 mb-3">
+          <div>
+            <h2>Checklist Khắc phục 7 ngày (Tích chọn để xem điểm sức khỏe 2 kênh tăng trực tiếp)</h2>
+            <p class="muted">Sắp xếp theo thứ tự ưu tiên từ việc làm mất 10 phút nhưng ra đơn ngay đến quy trình dài hạn</p>
+          </div>
+          <div class="flex items-center gap-4 small">
+            <div>Điểm TB hiện tại: <strong id="actionBaseScore" class="num" style="color:#fb7185; font-size:16px;">37/100</strong></div>
+            <div>Điểm dự kiến sau tick: <strong id="actionProjectedScore" class="num" style="color:#34d399; font-size:18px;">37/100</strong></div>
+          </div>
+        </div>
+        <div class="bar-track" style="height:14px;">
+          <div id="actionProgressBar" class="bar-fill" style="width:0%; background:linear-gradient(90deg, #38bdf8, #34d399);"></div>
+        </div>
+      </div>
+
+      <div class="grid-12">
+        <div id="checklistContainer" class="col-7 row-space"></div>
+
+        <div class="card col-5 row-space" style="align-self:start;">
+          <div>
+            <h3>Bộ mẫu Bìa + Caption + 5 Hashtag chuẩn SEO (An toàn TPCN)</h3>
+            <p class="muted mt-1">Chọn dòng sản phẩm để lấy mẫu sạch chính sách (không dùng "Bs", "điều trị", luôn kèm liều dùng + 5 hashtag)</p>
+          </div>
+          <div class="flex flex-wrap gap-1" id="templateTabs"></div>
+          <div id="templateBox" class="row-space mt-1"></div>
+          <button id="copyTemplateBtn" class="btn btn-primary justify-center" style="width:100%; padding:10px;">Sao chép mẫu Caption &amp; Hashtag</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <script>
+    // ===================== 1. VERIFIED REAL DATA =====================
+    const CHANNELS = [
+      {
+        id: 'baovesuckhoe2424', handle: '@baovesuckhoe2424', name: 'BẢO VỆ SỨC KHOẺ',
+        group: 'competitor', groupLabel: 'Đối thủ', color: '#38bdf8',
+        created: '2025-02-02', ageMonths: 21.7, followers: 8854, following: 2, friends: 31, likes: 52300, videos: 782,
+        pinnedViews: [2700000, 819300, 338000],
+        recent16Views: [36, 44, 26, 74, 156, 91, 136, 708, 11500, 174, 102, 1314, 3081, 1340, 1066, 649],
+        aiLabel: 'Health & Wellness', captionRate: 100, avgHashtags: 5.0, avgDuration: 77, gmvShopPct: 100, uploadGapMin: 18.0,
+        radar: [98, 95, 98, 80, 90, 100]
+      },
+      {
+        id: 'phongbenhthayvichuabenh', handle: '@phongbenhthayvichuabenh', name: 'Sức Khoẻ Chủ Động',
+        group: 'competitor', groupLabel: 'Đối thủ', color: '#34d399',
+        created: '2026-06-28', ageMonths: 4.9, followers: 3955, following: 5, friends: 0, likes: 27100, videos: 500,
+        pinnedViews: [225000, 155300, 342900],
+        recent16Views: [944, 859, 692, 728, 1306, 667, 819, 957, 792, 976, 1043, 11000, 694, 769, 1224, 592],
+        aiLabel: 'Health & Wellness', captionRate: 100, avgHashtags: 5.0, avgDuration: 52, gmvShopPct: 100, uploadGapMin: 4.2,
+        radar: [98, 98, 100, 96, 95, 86]
+      },
+      {
+        id: 'suc.khoe.vang.268', handle: '@suc.khoe.vang.268', name: 'Sức khoẻ vàng',
+        group: 'mine', groupLabel: 'Kênh bạn', color: '#fb7185',
+        created: '2024-10-08', ageMonths: 25.5, followers: 3436, following: 1667, friends: 977, likes: 16600, videos: 653,
+        pinnedViews: [44700, 29700, 42200],
+        recent16Views: [85, 51, 11, 179, 339, 126, 228, 323, 144, 468, 164, 0, 30, 48, 100, 213],
+        aiLabel: 'Advertisement, Others', captionRate: 0, avgHashtags: 0.0, avgDuration: 100, gmvShopPct: 33, uploadGapMin: 1.0,
+        radar: [33, 10, 28, 22, 30, 42]
+      },
+      {
+        id: 'suckhoeviet.2', handle: '@suckhoeviet.2', name: 'Sống Khoẻ Mỗi Ngày',
+        group: 'mine', groupLabel: 'Kênh bạn', color: '#fbbf24',
+        created: '2025-04-16', ageMonths: 19.3, followers: 3846, following: 75, friends: 42, likes: 20300, videos: 396,
+        pinnedViews: [0, 0, 0],
+        recent16Views: [203, 521, 449, 125, 69, 93, 102, 4980, 255, 213, 194, 60, 19, 60, 62, 171],
+        aiLabel: 'Health & Wellness', captionRate: 6.25, avgHashtags: 0.13, avgDuration: 76, gmvShopPct: 100, uploadGapMin: 1.1,
+        radar: [85, 18, 86, 35, 55, 5]
+      }
+    ];
+
+    function median(arr) {
+      const s = [...arr].sort((a, b) => a - b);
+      const m = Math.floor(s.length / 2);
+      return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+    }
+
+    CHANNELS.forEach(c => {
+      c.followersPerMonth = +(c.followers / c.ageMonths).toFixed(1);
+      c.likesPerMonth = Math.round(c.likes / c.ageMonths);
+      c.videosPerMonth = +(c.videos / c.ageMonths).toFixed(1);
+      c.likesPerVideo = +(c.likes / c.videos).toFixed(1);
+      c.pinnedTotalViews = c.pinnedViews.reduce((a, b) => a + b, 0);
+      c.medianRecentViews = Math.round(median(c.recent16Views));
+      c.cleanFollowerPct = +(((c.followers - c.friends) / c.followers) * 100).toFixed(1);
+      c.healthScore = Math.round(c.radar.reduce((a, b) => a + b, 0) / c.radar.length);
+    });
+
+    const VIDEOS_AUDIT = [
+      { channel: '@baovesuckhoe2424', group: 'Đối thủ', id: '7689500471203073288', date: '2026-09-25', productLine: 'Canxi', title: 'Canxi hữu cơ Mason Natural Citrate + D3 (Pinned #1)', views: 2700000, likes: 11800, comments: 527, saves: 1718, shares: 1816, duration: 92, isAd: true, seller: '7494605437873326000', sellerName: 'Shop Mason/Olympian (GMV Max)', aiLabel: 'Health & Wellness', hashtags: 5, descLen: 152 },
+      { channel: '@baovesuckhoe2424', group: 'Đối thủ', id: '7700169545352269074', date: '2026-10-24', productLine: 'Canxi', title: 'Canxi hữu cơ Mason Natural Citrate + D3 (Pinned #2)', views: 819300, likes: 3703, comments: 105, saves: 510, shares: 447, duration: 92, isAd: true, seller: '7494605437873326000', sellerName: 'Shop Mason/Olympian (GMV Max)', aiLabel: 'Health & Wellness', hashtags: 5, descLen: 186 },
+      { channel: '@baovesuckhoe2424', group: 'Đối thủ', id: '7711040488198950151', date: '2026-11-22', productLine: 'Bổ khớp', title: 'Bổ khớp Chondro-Aid Pháp (Bật spike 1 ngày)', views: 11500, likes: 81, comments: 1, saves: 9, shares: 4, duration: 72, isAd: true, seller: '7494727475325798000', sellerName: 'Shop Arkopharma (GMV Max)', aiLabel: 'Health & Wellness', hashtags: 5, descLen: 172 },
+      { channel: '@baovesuckhoe2424', group: 'Đối thủ', id: '7711373762343603474', date: '2026-11-23', productLine: 'Canxi', title: 'Olympian Labs Green Calcium (Vừa đăng 23/11)', views: 36, likes: 2, comments: 0, saves: 0, shares: 0, duration: 53, isAd: true, seller: '7494605437873326000', sellerName: 'Shop Mason/Olympian (GMV Max)', aiLabel: 'Health & Wellness', hashtags: 4, descLen: 142 },
+
+      { channel: '@phongbenhthayvichuabenh', group: 'Đối thủ', id: '7676538099748408596', date: '2026-08-22', productLine: 'Dưỡng tóc', title: 'Biotin Pháp Arkopharma Forcapil (Pinned #3)', views: 342900, likes: 1731, comments: 124, saves: 346, shares: 423, duration: 68, isAd: true, seller: '7494727475325798000', sellerName: 'Shop Arkopharma (GMV Max)', aiLabel: 'Beauty & Care', hashtags: 5, descLen: 142 },
+      { channel: '@phongbenhthayvichuabenh', group: 'Đối thủ', id: '7703756930086489364', date: '2026-11-03', productLine: 'Bổ khớp', title: 'Bổ khớp Chondro-Aid Pháp (Pinned #1)', views: 225000, likes: 1203, comments: 67, saves: 212, shares: 106, duration: 60, isAd: true, seller: '7494727475325798000', sellerName: 'Shop Arkopharma (GMV Max)', aiLabel: 'Health & Wellness', hashtags: 5, descLen: 117 },
+      { channel: '@phongbenhthayvichuabenh', group: 'Đối thủ', id: '7711000493933317428', date: '2026-11-22', productLine: 'Bổ khớp', title: 'Bổ khớp Chondro-Aid Pháp (Clip ngắn 27s bật 11K)', views: 11000, likes: 71, comments: 0, saves: 22, shares: 3, duration: 27, isAd: true, seller: '7494727475325798000', sellerName: 'Shop Arkopharma (GMV Max)', aiLabel: 'Health & Wellness', hashtags: 5, descLen: 120 },
+      { channel: '@phongbenhthayvichuabenh', group: 'Đối thủ', id: '7711025569391054101', date: '2026-11-22', productLine: 'Canxi', title: 'Olympian Labs Green Calcium (Mẹ sau sinh)', views: 944, likes: 12, comments: 1, saves: 1, shares: 1, duration: 52, isAd: true, seller: '7494605437873326000', sellerName: 'Shop Mason/Olympian (GMV Max)', aiLabel: 'Health & Wellness', hashtags: 5, descLen: 127 },
+
+      { channel: '@suc.khoe.vang.268', group: 'Kênh bạn', id: '7670027903890902292', date: '2026-08-04', productLine: 'Omega 3', title: 'Dầu cá Omega 3 Pháp Arkopharma (Pinned #1)', views: 44700, likes: 417, comments: 21, saves: 34, shares: 30, duration: 120, isAd: true, seller: '7494727475325798000', sellerName: 'Shop Arkopharma (GMV Max)', aiLabel: 'Advertisement, Others', hashtags: 3, descLen: 96 },
+      { channel: '@suc.khoe.vang.268', group: 'Kênh bạn', id: '7663130031811480853', date: '2026-07-16', productLine: 'Collagen', title: 'Collagen CH-Alpha Plus (Pinned #3 — Shop khác)', views: 42200, likes: 769, comments: 27, saves: 83, shares: 103, duration: 120, isAd: false, seller: '7495168749710772000', sellerName: 'Shop khác (KHÔNG GMV Max)', aiLabel: 'Health & Wellness', hashtags: 2, descLen: 108 },
+      { channel: '@suc.khoe.vang.268', group: 'Kênh bạn', id: '7710990293192936725', date: '2026-11-22', productLine: 'Bổ khớp', title: 'Chondro-Aid Pháp (0 Caption, sai chính tả, Shop khác)', views: 85, likes: 4, comments: 0, saves: 1, shares: 0, duration: 60, isAd: false, seller: '7495168749710772000', sellerName: 'Shop khác (KHÔNG GMV Max)', aiLabel: 'Advertisement, Others', hashtags: 0, descLen: 0 },
+
+      { channel: '@suckhoeviet.2', group: 'Kênh bạn', id: '7696408492239752468', date: '2026-10-14', productLine: 'Canxi', title: 'Mason Natural Calcium Citrate + D3 (Chưa ghim!)', views: 157900, likes: 1464, comments: 25, saves: 98, shares: 49, duration: 120, isAd: true, seller: '7494605437873326000', sellerName: 'Shop Mason/Olympian (GMV Max)', aiLabel: 'Health & Wellness', hashtags: 2, descLen: 2003 },
+      { channel: '@suckhoeviet.2', group: 'Kênh bạn', id: '7710512462046448917', date: '2026-11-21', productLine: 'Collagen', title: 'CH-Alpha Plus Đức (0 Caption, xả 15 bài/18 phút)', views: 521, likes: 5, comments: 0, saves: 0, shares: 1, duration: 49, isAd: true, seller: '7495319409838361000', sellerName: 'Shop CH-Alpha (GMV Max)', aiLabel: 'Health & Wellness', hashtags: 0, descLen: 0 },
+      { channel: '@suckhoeviet.2', group: 'Kênh bạn', id: '7711243385914264839', date: '2026-11-23', productLine: 'Omega 3', title: 'Omega 3 Arkopharma (Gõ nhầm "Omega 2"!)', views: 203, likes: 4, comments: 2, saves: 0, shares: 0, duration: 60, isAd: true, seller: '7494727475325798000', sellerName: 'Shop Arkopharma (GMV Max)', aiLabel: 'Health & Wellness', hashtags: 2, descLen: 52 }
+    ].map(v => ({
+      ...v,
+      hasCaption: v.descLen > 0 && v.hashtags > 0 ? 'Có Caption + Hashtag' : 'Trống Caption / 0 Hashtag',
+      durationBucket: v.duration <= 65 ? 'Ngắn tối ưu (≤ 65s)' : (v.duration <= 95 ? 'Trung bình (66–95s)' : 'Dài (> 95s / 2 phút)'),
+      saveShare: v.saves + v.shares,
+      engRate: +(((v.likes + v.comments + v.saves + v.shares) / Math.max(v.views, 1)) * 100).toFixed(2),
+      saveShareRate: +(((v.saves + v.shares) / Math.max(v.views, 1)) * 1000).toFixed(2)
+    }));
+
+    const BURST_DATA = [
+      { channel: '@phongbenhthayvichuabenh', min: 0.0, views: 769, cap: 'Bổ khớp Glucosamine #5tags' },
+      { channel: '@phongbenhthayvichuabenh', min: 4.0, views: 694, cap: 'Ngày 2 viên sau ăn #5tags' },
+      { channel: '@phongbenhthayvichuabenh', min: 9.4, views: 11000, cap: 'Các vấn đề về Khớp (27s, 11K!)' },
+      { channel: '@phongbenhthayvichuabenh', min: 12.4, views: 1043, cap: 'Dùng chung bệnh mạn tính' },
+      { channel: '@phongbenhthayvichuabenh', min: 17.1, views: 976, cap: 'Không tích nước tăng kg' },
+      { channel: '@phongbenhthayvichuabenh', min: 22.6, views: 792, cap: '20 Vitamin khoáng chất B' },
+      { channel: '@phongbenhthayvichuabenh', min: 26.8, views: 957, cap: 'Vitamin tổng hợp Pháp' },
+      { channel: '@phongbenhthayvichuabenh', min: 30.9, views: 819, cap: 'Sau khi bệnh bồi bổ' },
+      { channel: '@phongbenhthayvichuabenh', min: 35.2, views: 667, cap: 'Mệt mỏi, ăn chay, rượu bia' },
+      { channel: '@phongbenhthayvichuabenh', min: 39.0, views: 1306, cap: 'Từ 15 tuổi, 2v/ngày' },
+      { channel: '@phongbenhthayvichuabenh', min: 42.6, views: 728, cap: 'Hay ho cảm sổ mũi' },
+      { channel: '@phongbenhthayvichuabenh', min: 46.2, views: 692, cap: '20 vitamin khoáng chất' },
+      { channel: '@phongbenhthayvichuabenh', min: 101.9, views: 859, cap: 'Mỡ máu, tiểu đường Omega 3' },
+      { channel: '@phongbenhthayvichuabenh', min: 106.7, views: 944, cap: 'Dấu hiệu thiếu Canxi nữ sau sinh' },
+
+      { channel: '@suc.khoe.vang.268', min: 0.0, views: 48, cap: '(Trống caption/hashtag)' },
+      { channel: '@suc.khoe.vang.268', min: 2.2, views: 30, cap: '(Trống caption/hashtag)' },
+      { channel: '@suc.khoe.vang.268', min: 3.9, views: 0, cap: '0 VIEW! (Trống caption)' },
+      { channel: '@suc.khoe.vang.268', min: 4.6, views: 164, cap: '(Trống caption/hashtag)' },
+      { channel: '@suc.khoe.vang.268', min: 5.7, views: 468, cap: '(Trống caption/hashtag)' },
+      { channel: '@suc.khoe.vang.268', min: 7.2, views: 144, cap: '(Trống caption/hashtag)' },
+      { channel: '@suc.khoe.vang.268', min: 7.9, views: 323, cap: '(Trống caption/hashtag)' },
+      { channel: '@suc.khoe.vang.268', min: 10.1, views: 228, cap: 'Cách bài sau đúng 10 giây!' },
+      { channel: '@suc.khoe.vang.268', min: 10.3, views: 126, cap: 'Đăng sau 10 giây (0 caption)' },
+      { channel: '@suc.khoe.vang.268', min: 10.8, views: 339, cap: '(Trống caption/hashtag)' },
+      { channel: '@suc.khoe.vang.268', min: 12.1, views: 179, cap: '(Trống caption/hashtag)' },
+      { channel: '@suc.khoe.vang.268', min: 13.0, views: 11, cap: '11 view (0 caption)' },
+      { channel: '@suc.khoe.vang.268', min: 14.0, views: 51, cap: 'Ảnh giỏ hàng Bs Chường' },
+      { channel: '@suc.khoe.vang.268', min: 15.1, views: 85, cap: 'Sai chính tả + shop không Ads' },
+
+      { channel: '@suckhoeviet.2', min: 0.0, views: 171, cap: '(Trống caption/hashtag)' },
+      { channel: '@suckhoeviet.2', min: 0.8, views: 62, cap: '(Trống caption/hashtag)' },
+      { channel: '@suckhoeviet.2', min: 2.3, views: 60, cap: '(Trống caption/hashtag)' },
+      { channel: '@suckhoeviet.2', min: 3.4, views: 19, cap: '19 view (0 caption)' },
+      { channel: '@suckhoeviet.2', min: 4.2, views: 60, cap: '(Trống caption/hashtag)' },
+      { channel: '@suckhoeviet.2', min: 5.5, views: 194, cap: '(Trống caption/hashtag)' },
+      { channel: '@suckhoeviet.2', min: 6.6, views: 213, cap: '(Trống caption/hashtag)' },
+      { channel: '@suckhoeviet.2', min: 8.7, views: 255, cap: '(Trống caption/hashtag)' },
+      { channel: '@suckhoeviet.2', min: 10.8, views: 4980, cap: 'Bài duy nhất bật 4.980 view' },
+      { channel: '@suckhoeviet.2', min: 12.2, views: 102, cap: '(Trống caption/hashtag)' },
+      { channel: '@suckhoeviet.2', min: 13.1, views: 93, cap: '(Trống caption/hashtag)' },
+      { channel: '@suckhoeviet.2', min: 14.2, views: 69, cap: '(Trống caption/hashtag)' },
+      { channel: '@suckhoeviet.2', min: 15.4, views: 125, cap: '(Trống caption/hashtag)' },
+      { channel: '@suckhoeviet.2', min: 56.3, views: 449, cap: '(Trống caption/hashtag)' },
+      { channel: '@suckhoeviet.2', min: 57.6, views: 521, cap: '(Trống caption/hashtag)' }
+    ];
+
+    const CHECKLIST_ITEMS = [
+      { id: 'pin-skv', day: 'Ngày 1 (10 phút)', impact: 'Cực cao', points: 12, channel: '@suckhoeviet.2', title: 'Ghim ngay 3 video mạnh nhất (2.4M, 159.8K, 157.9K) lên đầu kênh', detail: 'Hiện kênh đang có 0 video ghim — khách vào chỉ thấy bài 19–203 view và chữ "Omega 2", mất sạch uy tín chốt đơn.' },
+      { id: 'pin-skvang', day: 'Ngày 1 (10 phút)', impact: 'Cao', points: 8, channel: '@suc.khoe.vang.268', title: 'Đổi 3 video ghim cũ (29K–44K) sang 3 bài 138.1K, 126.5K, 114.3K', detail: 'Tăng gấp 3 lần bằng chứng xã hội (Social Proof) khi khách kiểm tra kênh trước khi đặt mua TPCN.' },
+      { id: 'switch-shop', day: 'Ngày 1 (15 phút)', impact: 'Cực cao', points: 14, channel: '@suc.khoe.vang.268', title: 'Chuyển link giỏ hàng Chondro-Aid / Canxi / CH-Alpha sang Shop GMV Max', detail: 'Gắn đúng Shop 7494727475325798000 (Arkopharma) & 7494605437873326000 (Mason/Olympian) thay vì shop 7495168749710772000 (isAd: false) và bật Cấp quyền quảng cáo.' },
+      { id: 'stop-spam', day: 'Ngày 2 (Bắt buộc)', impact: 'Cực cao', points: 11, channel: 'Cả 2 kênh', title: 'Dừng đăng xả 10–60 giây/video; giãn lịch tối thiểu 5–15 phút/bài', detail: 'Giống @phongbenhthayvichuabenh (giãn đều 4–5 phút/bài) để mỗi clip qua vòng test tự nhiên 700–1.300 view mà không bị dính 0 view.' },
+      { id: 'seo-caption', day: 'Ngày 2 (Bắt buộc)', impact: 'Cực cao', points: 12, channel: 'Cả 2 kênh', title: '100% bài phải có Caption 3–4 dòng + 5 Hashtag chuẩn SEO (không copy chéo 2 kênh)', detail: 'Chấm dứt để trống caption và chấm dứt copy-paste bài AI 2.000 chữ giống hệt nhau giữa 2 kênh để giữ nhãn Health & Wellness.' },
+      { id: 'policy-cover', day: 'Ngày 3–4', impact: 'Cao', points: 9, channel: 'Cả 2 kênh', title: 'Đổi bìa nền vàng chữ đen + thêm "Hỗ trợ" + bỏ "Bs Chường" & kiểm chính tả', detail: 'Xóa lỗi "Viên khớp, thoát hoá, thái hoá", "Omega 2", không dùng ảnh chụp màn hình doanh thu làm bìa; luôn ghi rõ liều dùng (vd: 1 viên/sáng).' },
+      { id: 'trim-duration', day: 'Ngày 4–5', impact: 'Cao', points: 7, channel: 'Cả 2 kênh', title: 'Cắt gọn video về khung 30–65 giây (1 clip = 1 nỗi đau cụ thể)', detail: 'Kéo Completion Rate vượt mốc clip 120s cũ; test 4–5 góc đau nhức khác nhau trên cùng 1 sản phẩm để GMV Max chọn bài thắng.' },
+      { id: 'clean-bio', day: 'Ngày 5–7', impact: 'Trung bình', points: 6, channel: '@suc.khoe.vang.268', title: 'Ngừng follow chéo, sửa Bio chuyên gia & đồng bộ Avatar y tế/sức khỏe', detail: 'Bỏ câu xin +1 follow/+1 share; giữ nguyên tên kênh @suckhoeviet.2 (không đổi tên thêm nữa sau 4 lần đổi).' }
+    ];
+
+    const TEMPLATES = [
+      {
+        key: 'canxi', label: 'Canxi hữu cơ',
+        cover: 'Tê tay, tê chân, chuột rút ban đêm\nCanxi hữu cơ Citrate + D3 Mỹ\nHỗ trợ chắc xương · 1 viên/buổi sáng',
+        caption: 'Hỗ trợ bổ sung Canxi hữu cơ Citrate + D3 dễ hấp thu, thân thiện dạ dày\nHỗ trợ giảm tê tay tê chân, chuột rút, loãng xương\nLiều dùng: 1 viên mỗi sáng sau ăn\n#canxihuuco #canxid3 #loangxuong #tetaytechan #chamsocsuckhoe'
+      },
+      {
+        key: 'khop', label: 'Bổ khớp Chondro-Aid',
+        cover: 'Khô khớp, khớp kêu lụp cụp\nBổ khớp Glucosamine Pháp\nHỗ trợ vận động linh hoạt · 2 viên/ngày',
+        caption: 'Viên uống bổ khớp Chondro-Aid Pháp bổ sung Glucosamine & Collagen Type II\nHỗ trợ dưỡng khớp, giảm khô khớp, đứng lên ngồi xuống dễ dàng hơn\nLiều dùng: 2 viên/ngày sau ăn, liệu trình 3 tháng\n#arkopharma #chondroaid #bokhop #glucosamine #xuongkhop'
+      },
+      {
+        key: 'omega3', label: 'Omega 3 Pháp',
+        cover: 'Mỏi mắt, hay quên, mỡ máu cao\nDầu cá Omega 3 Pháp tinh khiết\nHỗ trợ tim mạch & trí nhớ · Dùng đều mỗi ngày',
+        caption: 'Dầu cá Omega 3 Arkopharma Pháp giàu EPA & DHA tinh khiết\nHỗ trợ sức khỏe tim mạch, bổ mắt, tăng cường trí nhớ và giấc ngủ ngon\nLiều dùng: Dùng đều đặn mỗi ngày sau bữa ăn\n#arkopharma #omega3 #dauca #timmach #chamsocsuckhoe'
+      },
+      {
+        key: 'vitamin', label: 'Vitamin Azinc',
+        cover: 'Hay mệt mỏi, uể oải, kém ăn\nVitamin tổng hợp Azinc Pháp\n20 Vitamin & Khoáng chất · 2 viên/sáng',
+        caption: 'Vitamin tổng hợp Azinc Pháp bổ sung 12 Vitamin & 8 Khoáng chất thiết yếu\nHỗ trợ bồi bổ cơ thể, tăng sức đề kháng, giảm mệt mỏi cho người từ 15 tuổi\nLiều dùng: 2 viên mỗi sáng cùng nước lọc\n#arkopharma #vitamintonghop #azinc #tangdekhang #chamsocsuckhoe'
+      },
+      {
+        key: 'collagen', label: 'Collagen CH-Alpha',
+        cover: 'Đau mỏi khớp gối khi leo cầu thang\nCollagen sụn khớp CH-Alpha Đức\nHỗ trợ tái tạo sụn khớp · 1 ống/sáng',
+        caption: 'Collagen thủy phân CH-Alpha Plus nhập khẩu Đức dạng nước dễ hấp thu\nHỗ trợ bổ sung dưỡng chất cho sụn khớp, duy trì vận động dẻo dai\nLiều dùng: 1 ống mỗi sáng sau ăn, lắc đều trước khi uống\n#chalpha #collagensunkhop #duongkhop #xuongkhop #chamsocsuckhoe'
+      }
+    ];
+
+    const SERIES_COLORS = ['#38bdf8', '#34d399', '#a78bfa', '#fbbf24', '#fb7185', '#22d3ee'];
+
+    // ===================== 2. STATE & HELPERS =====================
+    let selectedChannels = new Set(CHANNELS.map(c => c.id));
+    let scorecardSort = { key: 'healthScore', dir: -1 };
+    let videoSort = { key: 'views', dir: -1 };
+    let checkedActions = new Set();
+    let activeTemplate = 'canxi';
+
+    function fmtNum(n) {
+      if (n >= 1000000) return (n / 1000000).toFixed(2).replace(/\.00$/, '') + 'M';
+      if (n >= 1000) return (n / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+      return n.toLocaleString('vi-VN');
+    }
+    function fmtVND(n) { return Math.round(n).toLocaleString('vi-VN') + ' ₫'; }
+    function getActiveChannels() { return CHANNELS.filter(c => selectedChannels.has(c.id)); }
+
+    const tooltip = document.getElementById('tooltip');
+    function showTooltip(e, html) {
+      tooltip.innerHTML = html;
+      tooltip.style.display = 'block';
+      let x = e.clientX + 14, y = e.clientY + 14;
+      if (x + 310 > window.innerWidth) x = e.clientX - 315;
+      if (y + 150 > window.innerHeight) y = e.clientY - 130;
+      tooltip.style.left = x + 'px';
+      tooltip.style.top = y + 'px';
+    }
+    function hideTooltip() { tooltip.style.display = 'none'; }
+
+    // ===================== 3. HEADER CONTROLS =====================
+    function renderChannelToggles() {
+      const wrap = document.getElementById('channelToggles');
+      wrap.innerHTML = CHANNELS.map(c => {
+        const active = selectedChannels.has(c.id);
+        return `<button data-ch="${c.id}" class="btn ch-toggle ${active ? '' : 'off'}" style="border-color:${active ? c.color : '#1e293b'};">
+          <span class="dot" style="background:${c.color}"></span>
+          <span>${c.handle}</span>
+          <span style="opacity:0.7; font-weight:500;">(${c.group === 'competitor' ? 'ĐT' : 'Bạn'})</span>
+        </button>`;
+      }).join('');
+      wrap.querySelectorAll('.ch-toggle').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const id = btn.dataset.ch;
+          if (selectedChannels.has(id) && selectedChannels.size > 1) selectedChannels.delete(id);
+          else selectedChannels.add(id);
+          syncPresetButtons();
+          renderAll();
+        });
+      });
+    }
+
+    function syncPresetButtons() {
+      document.querySelectorAll('.preset-btn').forEach(b => b.classList.remove('active'));
+      const ids = [...selectedChannels].sort().join(',');
+      if (selectedChannels.size === 4) document.querySelector('[data-preset="all"]').classList.add('active');
+      else if (ids === 'baovesuckhoe2424,phongbenhthayvichuabenh') document.querySelector('[data-preset="competitor"]').classList.add('active');
+      else if (ids === 'suc.khoe.vang.268,suckhoeviet.2') document.querySelector('[data-preset="mine"]').classList.add('active');
+    }
+
+    document.querySelectorAll('.preset-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const p = btn.dataset.preset;
+        if (p === 'all') selectedChannels = new Set(CHANNELS.map(c => c.id));
+        if (p === 'competitor') selectedChannels = new Set(CHANNELS.filter(c => c.group === 'competitor').map(c => c.id));
+        if (p === 'mine') selectedChannels = new Set(CHANNELS.filter(c => c.group === 'mine').map(c => c.id));
+        syncPresetButtons();
+        renderAll();
+      });
+    });
+
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
+        document.getElementById('tab-' + btn.dataset.tab).classList.remove('hidden');
+        setTimeout(() => { drawRadar(); drawBurstChart(); drawScatterChart(); }, 20);
+      });
+    });
+
+    // ===================== 4. TAB 1 RENDERERS =====================
+    function renderKPIs() {
+      const list = getActiveChannels();
+      const comp = CHANNELS.filter(c => c.group === 'competitor');
+      const mine = CHANNELS.filter(c => c.group === 'mine');
+      const avg = (arr, fn) => arr.reduce((s, x) => s + fn(x), 0) / Math.max(arr.length, 1);
+
+      const kpis = [
+        { label: 'Tốc độ Follower / tháng', value: avg(list, c => c.followersPerMonth).toFixed(0) + ' flw/th', sub: `ĐT: ${avg(comp, c => c.followersPerMonth).toFixed(0)} · Bạn: ${avg(mine, c => c.followersPerMonth).toFixed(0)} (Thua 3.6×)`, color: '#38bdf8' },
+        { label: 'Median View 16 bài gần nhất', value: fmtNum(Math.round(avg(list, c => c.medianRecentViews))), sub: 'ĐT #2: 839 view nền · Bạn: 135–182 view', color: '#34d399' },
+        { label: 'Tổng View 3 bài Ghim TB', value: fmtNum(Math.round(avg(list, c => c.pinnedTotalViews))), sub: 'ĐT: 2.29M TB · Bạn: 58.3K (Thua 39×)', color: '#fbbf24' },
+        { label: 'Tỷ lệ Có Caption & Hashtag', value: avg(list, c => c.captionRate).toFixed(1) + '%', sub: 'ĐT: 100% đủ 5 tag · Bạn: 0% & 6.3%', color: '#fb7185' },
+        { label: 'Điểm Sức khỏe Kênh TB', value: Math.round(avg(list, c => c.healthScore)) + ' / 100', sub: 'ĐT: 94/100 · Kênh bạn: 37/100', color: '#a78bfa' }
+      ];
+
+      document.getElementById('kpiGrid').innerHTML = kpis.map(k => `
+        <div class="card" style="padding:15px 16px; border-top:3px solid ${k.color};">
+          <div class="muted" style="font-weight:600;">${k.label}</div>
+          <div class="kpi-val" style="color:${k.color};">${k.value}</div>
+          <div class="kpi-sub">${k.sub}</div>
+        </div>
+      `).join('');
+    }
+
+    const METRIC_META = {
+      followersPerMonth: { fmt: v => v.toFixed(1) + ' flw/th', insight: 'Kênh đối thủ @phongbenhthayvichuabenh mới tạo tháng 06/2026 (4.9 tháng) nhưng tốc độ kéo follower đạt 807 flw/tháng — nhanh gấp 6 lần @suc.khoe.vang.268 (135 flw/tháng) dù bạn làm trước tới 20 tháng!' },
+      likesPerMonth: { fmt: v => fmtNum(v) + '/th', insight: '@phongbenhthayvichuabenh đạt ~5.531 like/tháng và @baovesuckhoe2424 đạt ~2.410 like/tháng, trong khi 2 kênh bạn chỉ đạt 651–1.052 like/tháng do loạt bài gần đây bị mất đề xuất.' },
+      medianRecentViews: { fmt: v => fmtNum(v) + ' views', insight: 'Median view phản ánh đúng "độ khỏe nền" của kênh (không bị lệch bởi 1 bài viral cũ). @phongbenhthayvichuabenh duy trì nền 839 view/bài dù đăng 14 bài/ngày, gấp 6.2 lần @suc.khoe.vang.268 (135 view).' },
+      pinnedTotalViews: { fmt: v => fmtNum(v) + ' views', insight: 'Đây là "lỗ hổng dễ vá nhất trong 10 phút": @suckhoeviet.2 đang có 0 bài ghim dù sở hữu bài 2.4M & 904K view bị chôn bên dưới; @suc.khoe.vang.268 chưa ghim 3 bài 138K/126K/114K.' },
+      cleanFollowerPct: { fmt: v => v + '%', insight: '@suc.khoe.vang.268 đang có 977 bạn bè tương hỗ / 3.436 followers (chỉ 71.6% tệp tự nhiên) do follow chéo 1.667 tài khoản, khiến vòng test 100 view đầu tiên bị tệp lệch nhu cầu lướt bỏ.' },
+      healthScore: { fmt: v => v + ' / 100', insight: 'Hai kênh đối thủ đều đạt 93–96/100 nhờ đồng bộ cả 6 trụ cột (Shop GMV Max + SEO 5 hashtag + Tệp sạch + Nhịp đăng + Bìa vàng an toàn + 3 bài ghim). Kênh bạn bị kéo tụt nặng nhất ở SEO và Ghim bài.' },
+      likesPerVideo: { fmt: v => v.toFixed(1) + ' likes', insight: 'Chất lượng mỗi video của 2 kênh đối thủ mang lại 54–67 like/video, gấp đôi mức 25.4 like/video của @suc.khoe.vang.268.' },
+      videosPerMonth: { fmt: v => v.toFixed(1) + ' vid/th', insight: '@phongbenhthayvichuabenh sản xuất cực đều ~102 video/tháng để liên tục test góc tiếp cận mới cho GMV Max chọn bài thắng, nhưng luôn giãn cách đăng 4–5 phút và đủ caption.' }
+    };
+
+    function renderMetricBars() {
+      const key = document.getElementById('barMetricSelect').value;
+      const meta = METRIC_META[key];
+      const list = [...getActiveChannels()].sort((a, b) => b[key] - a[key]);
+      const maxVal = Math.max(...list.map(c => c[key]), 1);
+
+      document.getElementById('metricBarChart').innerHTML = list.map(c => {
+        const pct = Math.max((c[key] / maxVal) * 100, c[key] > 0 ? 3 : 0.8);
+        return `
+          <div>
+            <div class="flex justify-between items-center small mb-2">
+              <div class="flex items-center gap-2">
+                <span class="dot" style="background:${c.color}"></span>
+                <strong style="color:#f8fafc;">${c.handle}</strong>
+                <span class="badge ${c.group === 'competitor' ? 'badge-cyan' : 'badge-amber'}">${c.groupLabel}</span>
+              </div>
+              <span class="num" style="color:${c.color}; font-size:14px;">${meta.fmt(c[key])}</span>
+            </div>
+            <div class="bar-track" style="height:13px;">
+              <div class="bar-fill" style="width:${pct}%; background:linear-gradient(90deg, ${c.color}aa, ${c.color});"></div>
+            </div>
+          </div>`;
+      }).join('');
+      document.getElementById('metricInsightBox').innerHTML = `<strong style="color:#7dd3fc;">Insight chính:</strong> ${meta.insight}`;
+    }
+
+    function drawRadar() {
+      const canvas = document.getElementById('radarCanvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const W = canvas.width, H = canvas.height;
+      ctx.clearRect(0, 0, W, H);
+
+      const cx = W / 2, cy = H / 2 + 6, R = 104;
+      const labels = ['Shop GMV Max', 'SEO Caption/Tag', 'Tệp sạch', 'Nhịp & Giây', 'Chính sách/Bìa', '3 Bài Ghim'];
+      const N = labels.length;
+
+      for (let r = 1; r <= 4; r++) {
+        const rad = (R * r) / 4;
+        ctx.beginPath();
+        for (let i = 0; i < N; i++) {
+          const ang = (Math.PI * 2 * i) / N - Math.PI / 2;
+          const x = cx + Math.cos(ang) * rad, y = cy + Math.sin(ang) * rad;
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        }
+        ctx.closePath();
+        ctx.strokeStyle = '#24324a';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+      }
+
+      ctx.font = '600 12px "Segoe UI", system-ui, sans-serif';
+      for (let i = 0; i < N; i++) {
+        const ang = (Math.PI * 2 * i) / N - Math.PI / 2;
+        const x = cx + Math.cos(ang) * R, y = cy + Math.sin(ang) * R;
+        ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(x, y);
+        ctx.strokeStyle = '#24324a'; ctx.stroke();
+
+        const lx = cx + Math.cos(ang) * (R + 20), ly = cy + Math.sin(ang) * (R + 18);
+        ctx.fillStyle = '#cbd5e1';
+        ctx.textAlign = Math.cos(ang) > 0.2 ? 'left' : (Math.cos(ang) < -0.2 ? 'right' : 'center');
+        ctx.textBaseline = 'middle';
+        ctx.fillText(labels[i], lx, ly);
+      }
+
+      const list = getActiveChannels();
+      list.forEach(c => {
+        ctx.beginPath();
+        c.radar.forEach((val, i) => {
+          const ang = (Math.PI * 2 * i) / N - Math.PI / 2;
+          const rad = (val / 100) * R;
+          const x = cx + Math.cos(ang) * rad, y = cy + Math.sin(ang) * rad;
+          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+        });
+        ctx.closePath();
+        ctx.strokeStyle = c.color;
+        ctx.lineWidth = 2.4;
+        ctx.stroke();
+        ctx.save();
+        ctx.globalAlpha = 0.16;
+        ctx.fillStyle = c.color;
+        ctx.fill();
+        ctx.restore();
+      });
+
+      document.getElementById('radarLegend').innerHTML = list.map(c => `
+        <span class="flex items-center gap-1" style="color:#e2e8f0;">
+          <span class="dot" style="background:${c.color}"></span>
+          <span>${c.handle} <strong style="color:${c.color}">(${c.healthScore})</strong></span>
+        </span>
+      `).join('');
+    }
+
+    function renderScorecard() {
+      const list = [...getActiveChannels()].sort((a, b) => {
+        const av = a[scorecardSort.key], bv = b[scorecardSort.key];
+        if (typeof av === 'string') return av.localeCompare(bv) * scorecardSort.dir;
+        return (av - bv) * scorecardSort.dir;
+      });
+
+      document.getElementById('scorecardBody').innerHTML = list.map(c => {
+        const badAi = c.aiLabel.includes('Advertisement');
+        const badClean = c.cleanFollowerPct < 80;
+        const badCap = c.captionRate < 50;
+        const badGap = c.uploadGapMin < 3;
+        const badPin = c.pinnedTotalViews < 200000;
+        return `
+          <tr>
+            <td>
+              <div class="flex items-center gap-2">
+                <span class="dot" style="background:${c.color}"></span>
+                <div>
+                  <div style="font-weight:700; color:#f8fafc;">${c.handle}</div>
+                  <div class="muted" style="font-size:12px;">${c.groupLabel} · ${c.videos} video</div>
+                </div>
+              </div>
+            </td>
+            <td class="num">${c.ageMonths} th</td>
+            <td class="num" style="color:${c.color};">${c.followersPerMonth}</td>
+            <td class="num" style="color:${badClean ? '#fda4af' : '#6ee7b7'};">${c.cleanFollowerPct}% <span class="muted" style="font-weight:400;">(${c.friends} chéo)</span></td>
+            <td class="num" style="color:${badPin ? '#fda4af' : '#6ee7b7'};">${fmtNum(c.pinnedTotalViews)}</td>
+            <td class="num" style="color:#f8fafc;">${fmtNum(c.medianRecentViews)}</td>
+            <td class="num" style="color:${badCap ? '#fda4af' : '#6ee7b7'};">${c.captionRate}%</td>
+            <td class="num" style="color:${badGap ? '#fda4af' : '#6ee7b7'};">~${c.uploadGapMin} phút</td>
+            <td><span class="badge ${badAi ? 'badge-red' : 'badge-green'}">${c.aiLabel}</span></td>
+            <td class="num" style="font-size:15px; color:${c.healthScore >= 80 ? '#34d399' : '#fb7185'};">${c.healthScore}</td>
+          </tr>`;
+      }).join('');
+    }
+
+    document.querySelectorAll('th[data-sort]').forEach(th => {
+      th.addEventListener('click', () => {
+        const k = th.dataset.sort;
+        if (scorecardSort.key === k) scorecardSort.dir *= -1;
+        else scorecardSort = { key: k, dir: -1 };
+        renderScorecard();
+      });
+    });
+
+    // ===================== 5. TAB 2: PIVOT + BURST + SCATTER =====================
+    function renderPivot() {
+      const dim = document.getElementById('pivotGroupBy').value;
+      const metric = document.getElementById('pivotMetric').value;
+      const activeHandles = new Set(getActiveChannels().map(c => c.handle));
+      const rows = VIDEOS_AUDIT.filter(v => activeHandles.has(v.channel));
+
+      const groups = {};
+      rows.forEach(v => {
+        let key;
+        if (dim === 'isAd') key = v.isAd ? 'isAd: true (Có GMV Max)' : 'isAd: false (Không GMV Max)';
+        else if (dim === 'seller') key = `${v.sellerName} (...${v.seller.slice(-6)})`;
+        else key = String(v[dim]);
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(v);
+      });
+
+      const summary = Object.entries(groups).map(([k, arr]) => ({
+        key: k, count: arr.length,
+        avgViews: Math.round(arr.reduce((s, x) => s + x.views, 0) / arr.length),
+        medianViews: Math.round(median(arr.map(x => x.views))),
+        engRate: +(arr.reduce((s, x) => s + x.engRate, 0) / arr.length).toFixed(2),
+        saveShareRate: +(arr.reduce((s, x) => s + x.saveShareRate, 0) / arr.length).toFixed(2),
+        avgDuration: Math.round(arr.reduce((s, x) => s + x.duration, 0) / arr.length),
+        avgHashtags: +(arr.reduce((s, x) => s + x.hashtags, 0) / arr.length).toFixed(1)
+      })).sort((a, b) => b[metric] - a[metric]);
+
+      const maxVal = Math.max(...summary.map(s => s[metric]), 1);
+      const fmtMetric = v => {
+        if (metric === 'avgViews' || metric === 'medianViews') return fmtNum(v);
+        if (metric === 'engRate') return v + '%';
+        if (metric === 'saveShareRate') return v + ' /1K';
+        if (metric === 'avgDuration') return v + 's';
+        return v + ' tags';
+      };
+
+      document.getElementById('pivotChartArea').innerHTML = summary.map((s, idx) => {
+        const pct = Math.max((s[metric] / maxVal) * 100, 4);
+        const col = SERIES_COLORS[idx % SERIES_COLORS.length];
+        return `
+          <div>
+            <div class="flex justify-between small mb-2 gap-2">
+              <span style="color:#f1f5f9; font-weight:600;">${s.key} <span class="muted" style="font-weight:400;">(${s.count} mẫu)</span></span>
+              <span class="num" style="color:${col}; white-space:nowrap;">${fmtMetric(s[metric])}</span>
+            </div>
+            <div class="bar-track" style="height:11px;">
+              <div class="bar-fill" style="width:${pct}%; background:linear-gradient(90deg, ${col}99, ${col});"></div>
+            </div>
+          </div>`;
+      }).join('');
+
+      document.getElementById('pivotTableBody').innerHTML = summary.map(s => `
+        <tr>
+          <td style="font-weight:600; color:#f1f5f9;">${s.key}</td>
+          <td class="text-right num">${s.count}</td>
+          <td class="text-right num" style="color:#38bdf8;">${fmtNum(s.avgViews)}</td>
+          <td class="text-right num" style="color:#34d399;">${fmtNum(s.medianViews)}</td>
+          <td class="text-right num">${s.engRate}%</td>
+          <td class="text-right num">${s.avgDuration}s</td>
+        </tr>
+      `).join('');
+    }
+
+    let burstPoints = [];
+    function drawBurstChart() {
+      const canvas = document.getElementById('burstCanvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const W = canvas.width, H = canvas.height;
+      ctx.clearRect(0, 0, W, H);
+
+      const lanes = [
+        { ch: '@phongbenhthayvichuabenh', label: '@phongbenh... (ĐT)', y: 68, color: '#34d399' },
+        { ch: '@suc.khoe.vang.268', label: '@suc.khoe.vang (Bạn)', y: 145, color: '#fb7185' },
+        { ch: '@suckhoeviet.2', label: '@suckhoeviet.2 (Bạn)', y: 222, color: '#fbbf24' }
+      ];
+      const padL = 160, padR = 24, maxMin = 112;
+
+      const x16 = padL + (16 / maxMin) * (W - padL - padR);
+      ctx.fillStyle = 'rgba(244, 63, 94, 0.14)';
+      ctx.fillRect(padL, 18, x16 - padL, H - 52);
+      ctx.strokeStyle = 'rgba(251, 113, 133, 0.45)';
+      ctx.strokeRect(padL, 18, x16 - padL, H - 52);
+
+      ctx.fillStyle = '#fda4af';
+      ctx.font = '600 12px "Segoe UI", system-ui, sans-serif';
+      ctx.textAlign = 'left';
+      ctx.fillText('Vùng xả spam 0–15p', padL + 6, 33);
+
+      [0, 15, 30, 45, 60, 90, 110].forEach(m => {
+        const x = padL + (m / maxMin) * (W - padL - padR);
+        ctx.beginPath(); ctx.moveTo(x, 42); ctx.lineTo(x, H - 30);
+        ctx.strokeStyle = '#1e293b'; ctx.setLineDash([4, 4]); ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillStyle = '#94a3b8'; ctx.textAlign = 'center';
+        ctx.fillText(m + 'p', x, H - 12);
+      });
+
+      lanes.forEach(l => {
+        ctx.beginPath(); ctx.moveTo(padL, l.y); ctx.lineTo(W - padR, l.y);
+        ctx.strokeStyle = '#24324a'; ctx.lineWidth = 1.2; ctx.stroke();
+        ctx.fillStyle = l.color; ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+        ctx.font = '700 12.5px "Segoe UI", system-ui, sans-serif';
+        ctx.fillText(l.label, padL - 12, l.y);
+      });
+
+      burstPoints = [];
+      BURST_DATA.forEach(pt => {
+        const lane = lanes.find(l => l.ch === pt.channel);
+        if (!lane) return;
+        const x = padL + (pt.min / maxMin) * (W - padL - padR);
+        const r = Math.max(4.5, Math.min(18, Math.log10(pt.views + 10) * 4.3));
+        ctx.beginPath(); ctx.arc(x, lane.y, r, 0, Math.PI * 2);
+        ctx.fillStyle = lane.color; ctx.globalAlpha = 0.78; ctx.fill();
+        ctx.globalAlpha = 1; ctx.strokeStyle = '#f8fafc'; ctx.lineWidth = 1.2; ctx.stroke();
+        burstPoints.push({ x, y: lane.y, r, pt });
+      });
+    }
+
+    document.getElementById('burstCanvas').addEventListener('mousemove', e => {
+      const rect = e.target.getBoundingClientRect();
+      const mx = (e.clientX - rect.left) * (e.target.width / rect.width);
+      const my = (e.clientY - rect.top) * (e.target.height / rect.height);
+      const hit = burstPoints.find(p => Math.hypot(p.x - mx, p.y - my) <= p.r + 3);
+      if (hit) {
+        showTooltip(e, `<div style="font-weight:700; color:#38bdf8;">${hit.pt.channel}</div>
+          <div>Phút thứ: <strong>+${hit.pt.min} phút</strong> từ bài đầu đợt</div>
+          <div>Lượt xem: <strong style="color:#34d399;">${fmtNum(hit.pt.views)} views</strong></div>
+          <div style="color:#94a3b8; margin-top:4px;">${hit.pt.cap}</div>`);
+      } else hideTooltip();
+    });
+    document.getElementById('burstCanvas').addEventListener('mouseleave', hideTooltip);
+
+    let scatterPoints = [];
+    function drawScatterChart() {
+      const canvas = document.getElementById('scatterCanvas');
+      if (!canvas) return;
+      const ctx = canvas.getContext('2d');
+      const W = canvas.width, H = canvas.height;
+      ctx.clearRect(0, 0, W, H);
+
+      const xKey = document.getElementById('scatterX').value;
+      const colorBy = document.getElementById('scatterColor').value;
+      const activeHandles = new Set(getActiveChannels().map(c => c.handle));
+      const data = VIDEOS_AUDIT.filter(v => activeHandles.has(v.channel));
+
+      const padL = 56, padR = 20, padT = 22, padB = 34;
+      const pw = W - padL - padR, ph = H - padT - padB;
+      const xMax = Math.max(...data.map(d => d[xKey]), 1) * 1.1;
+      const yMin = 1, yMax = 7;
+
+      [100, 1000, 10000, 100000, 1000000].forEach(v => {
+        const y = padT + ph - ((Math.log10(v) - yMin) / (yMax - yMin)) * ph;
+        ctx.beginPath(); ctx.moveTo(padL, y); ctx.lineTo(W - padR, y);
+        ctx.strokeStyle = '#1e293b'; ctx.setLineDash([4, 4]); ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillStyle = '#94a3b8'; ctx.font = '500 12px "Segoe UI", system-ui, sans-serif';
+        ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+        ctx.fillText(fmtNum(v), padL - 8, y);
+      });
+
+      for (let i = 0; i <= 4; i++) {
+        const val = (xMax * i) / 4;
+        const x = padL + (i / 4) * pw;
+        ctx.fillStyle = '#94a3b8'; ctx.textAlign = 'center';
+        ctx.fillText(Math.round(val), x, H - 12);
+      }
+
+      const legendMap = new Map();
+      const getColor = v => {
+        if (colorBy === 'isAd') {
+          const k = v.isAd ? 'isAd: true (GMV Max)' : 'isAd: false';
+          const c = v.isAd ? '#34d399' : '#fb7185';
+          legendMap.set(k, c); return c;
+        }
+        if (colorBy === 'aiLabel') {
+          const bad = v.aiLabel.includes('Advertisement');
+          const k = bad ? 'Advertisement, Others' : 'Health & Wellness / Beauty';
+          const c = bad ? '#fb7185' : '#38bdf8';
+          legendMap.set(k, c); return c;
+        }
+        const ch = CHANNELS.find(c => c.handle === v.channel);
+        const col = ch ? ch.color : '#38bdf8';
+        legendMap.set(v.channel, col); return col;
+      };
+
+      scatterPoints = [];
+      data.forEach(v => {
+        const x = padL + (v[xKey] / xMax) * pw;
+        const y = padT + ph - ((Math.log10(Math.max(v.views, 10)) - yMin) / (yMax - yMin)) * ph;
+        const col = getColor(v);
+        ctx.beginPath(); ctx.arc(x, y, 7.5, 0, Math.PI * 2);
+        ctx.fillStyle = col; ctx.globalAlpha = 0.88; ctx.fill();
+        ctx.globalAlpha = 1; ctx.strokeStyle = '#f8fafc'; ctx.lineWidth = 1.4; ctx.stroke();
+        scatterPoints.push({ x, y, r: 8.5, v });
+      });
+
+      document.getElementById('scatterLegend').innerHTML = [...legendMap.entries()].map(([k, c]) => `
+        <span class="flex items-center gap-1" style="color:#e2e8f0;"><span class="dot" style="background:${c}"></span>${k}</span>
+      `).join('');
+    }
+
+    document.getElementById('scatterCanvas').addEventListener('mousemove', e => {
+      const rect = e.target.getBoundingClientRect();
+      const mx = (e.clientX - rect.left) * (e.target.width / rect.width);
+      const my = (e.clientY - rect.top) * (e.target.height / rect.height);
+      const hit = scatterPoints.find(p => Math.hypot(p.x - mx, p.y - my) <= p.r + 3);
+      if (hit) {
+        const v = hit.v;
+        showTooltip(e, `<div style="font-weight:700; color:#38bdf8;">${v.channel}</div>
+          <div style="color:#cbd5e1;">${v.title}</div>
+          <div style="margin-top:4px;">Views: <strong style="color:#34d399;">${fmtNum(v.views)}</strong> · Giây: <strong>${v.duration}s</strong></div>
+          <div>isAd: <strong style="color:${v.isAd ? '#34d399' : '#fb7185'};">${v.isAd ? 'true (GMV Max)' : 'false'}</strong> · Tag: <strong>${v.hashtags}</strong></div>
+          <div>Nhãn AI: <strong>${v.aiLabel}</strong></div>`);
+      } else hideTooltip();
+    });
+    document.getElementById('scatterCanvas').addEventListener('mouseleave', hideTooltip);
+
+    // ===================== 6. TAB 3: SELLERS & VIDEO TABLE =====================
+    function renderSellerCards() {
+      const sellers = [
+        { id: '7494605437873326000', name: 'Shop Mason Natural & Olympian Labs', isAd: true, usedBy: '@baovesuckhoe2424, @phongbenh..., @suckhoeviet.2', topView: '2.7M · 819.3K · 157.9K', note: 'Bơm GMV Max cực mạnh cho video Canxi hữu cơ đạt chuẩn SEO.' },
+        { id: '7494727475325798000', name: 'Shop Arkopharma Pháp (Chondro-Aid, Forcapil, Omega 3)', isAd: true, usedBy: 'Cả 2 đối thủ, @suckhoeviet.2, 1 bài @suc.khoe.vang', topView: '342.9K · 225K · 11.5K · 11K', note: 'Nguồn đẩy GMV Max chính cho Bổ khớp, Dưỡng tóc, Omega 3.' },
+        { id: '7495319409838361000', name: 'Shop CH-Alpha Plus Đức', isAd: true, usedBy: '@suckhoeviet.2', topView: '521 (thiếu caption)', note: 'Có cờ isAd: true, nhưng bài của bạn để trống caption nên không được chọn đẩy.' },
+        { id: '7495168749710772000', name: 'Shop khác (Chondro-Aid & CH-Alpha)', isAd: false, usedBy: 'Chỉ @suc.khoe.vang.268', topView: '85 views (Chondro-Aid)', note: 'KHÔNG BẬT GMV MAX (isAd: false)! Cần đổi ngay link sản phẩm sang 2 shop trên.' }
+      ];
+      document.getElementById('sellerCards').innerHTML = sellers.map(s => `
+        <div class="sub-card row-space" style="gap:7px; border-color:${s.isAd ? '#24324a' : 'rgba(251,113,133,0.65)'}; border-top:3px solid ${s.isAd ? '#34d399' : '#fb7185'};">
+          <div class="flex justify-between items-center gap-2">
+            <span class="muted num">...${s.id.slice(-8)}</span>
+            <span class="badge ${s.isAd ? 'badge-green' : 'badge-red'}">${s.isAd ? 'isAd: TRUE' : 'isAd: FALSE'}</span>
+          </div>
+          <div style="font-weight:700; color:#f8fafc;">${s.name}</div>
+          <div class="muted">Dùng bởi: <span style="color:#e2e8f0;">${s.usedBy}</span></div>
+          <div class="small">Đỉnh view: <strong class="num" style="color:${s.isAd ? '#38bdf8' : '#fda4af'};">${s.topView}</strong></div>
+          <div class="muted" style="padding-top:7px; border-top:1px solid #1e293b;">${s.note}</div>
+        </div>
+      `).join('');
+    }
+
+    function renderVideoTable() {
+      const adF = document.getElementById('vidFilterAd').value;
+      const prodF = document.getElementById('vidFilterProduct').value;
+      const q = document.getElementById('vidSearch').value.trim().toLowerCase();
+      const activeHandles = new Set(getActiveChannels().map(c => c.handle));
+
+      let rows = VIDEOS_AUDIT.filter(v => activeHandles.has(v.channel));
+      if (adF !== 'all') rows = rows.filter(v => String(v.isAd) === adF);
+      if (prodF !== 'all') rows = rows.filter(v => v.productLine === prodF);
+      if (q) rows = rows.filter(v => (v.title + ' ' + v.seller + ' ' + v.sellerName + ' ' + v.channel).toLowerCase().includes(q));
+
+      rows.sort((a, b) => (a[videoSort.key] - b[videoSort.key]) * videoSort.dir);
+
+      document.getElementById('videoTableBody').innerHTML = rows.map(v => {
+        const ch = CHANNELS.find(c => c.handle === v.channel);
+        const badAi = v.aiLabel.includes('Advertisement');
+        return `
+          <tr>
+            <td style="font-weight:700; color:${ch ? ch.color : '#f8fafc'}; white-space:nowrap;">${v.channel}</td>
+            <td>
+              <div style="font-weight:600; color:#f1f5f9;">${v.title}</div>
+              <div class="muted" style="font-size:12px;">${v.date} · ${v.productLine}</div>
+            </td>
+            <td class="text-right num" style="color:#38bdf8;">${fmtNum(v.views)}</td>
+            <td class="text-right num">${fmtNum(v.likes)}</td>
+            <td class="text-right num">${fmtNum(v.saveShare)}</td>
+            <td class="text-right num" style="color:${v.duration > 95 ? '#fbbf24' : '#e2e8f0'};">${v.duration}s</td>
+            <td class="text-center"><span class="badge ${v.isAd ? 'badge-green' : 'badge-red'}">${v.isAd ? 'TRUE' : 'FALSE'}</span></td>
+            <td class="muted num">...${v.seller.slice(-7)}</td>
+            <td><span class="badge ${badAi ? 'badge-red' : 'badge-green'}">${v.aiLabel}</span></td>
+            <td class="text-right num" style="color:${v.hashtags === 0 ? '#fda4af' : '#e2e8f0'};">${v.hashtags}</td>
+          </tr>`;
+      }).join('') || `<tr><td colspan="10" class="text-center muted" style="padding:20px;">Không có video khớp bộ lọc</td></tr>`;
+    }
+
+    document.querySelectorAll('th[data-vsort]').forEach(th => {
+      th.addEventListener('click', () => {
+        const k = th.dataset.vsort;
+        if (videoSort.key === k) videoSort.dir *= -1;
+        else videoSort = { key: k, dir: -1 };
+        renderVideoTable();
+      });
+    });
+
+    // ===================== 7. TAB 4: SIMULATOR =====================
+    function computeSimulation() {
+      const vidDay = +document.getElementById('simVidDay').value;
+      const seoPct = +document.getElementById('simSeoPct').value;
+      const gmvPct = +document.getElementById('simGmvPct').value;
+      const dur = +document.getElementById('simDuration').value;
+      const pinned = document.getElementById('simPinned').checked;
+      const aov = +document.getElementById('simAov').value;
+      const comm = +document.getElementById('simComm').value;
+
+      document.getElementById('valVidDay').textContent = vidDay + ' video';
+      document.getElementById('valSeoPct').textContent = seoPct + '%';
+      document.getElementById('valGmvPct').textContent = gmvPct + '%';
+      document.getElementById('valDuration').textContent = dur + ' giây';
+      document.getElementById('valAov').textContent = fmtVND(aov);
+      document.getElementById('valComm').textContent = comm + '%';
+
+      const model = (vd, sp, gp, du, pin) => {
+        const monthlyVids = vd * 30;
+        const floorPerVid = 160 + (sp / 100) * 700;
+        const durMult = du <= 60 ? 1.25 : Math.max(0.72, 1.25 - ((du - 60) / 60) * 0.53);
+        const breakoutViewsPerVid = (gp / 100) * (0.25 + 0.75 * (sp / 100)) * 1850 * durMult;
+        const totalViews = Math.round(monthlyVids * (floorPerVid * durMult + breakoutViewsPerVid));
+        const ctr = 0.012 + (sp / 100) * 0.006 + (pin ? 0.005 : 0);
+        const cr = 0.025 + (pin ? 0.011 : 0) + (gp / 100) * 0.004;
+        const orders = Math.round(totalViews * ctr * cr);
+        const gmv = orders * aov;
+        return { totalViews, orders, gmv, commission: gmv * (comm / 100) };
+      };
+
+      const base = model(10, 5, 55, 90, false);
+      const proj = model(vidDay, seoPct, gmvPct, dur, pinned);
+      const deltaPct = (a, b) => b === 0 ? '+0%' : (((a - b) / b) >= 0 ? '+' : '') + Math.round(((a - b) / b) * 100) + '%';
+
+      document.getElementById('simOutputs').innerHTML = [
+        { label: 'Lượt xem dự kiến / tháng (2 kênh)', val: fmtNum(proj.totalViews), base: fmtNum(base.totalViews), d: deltaPct(proj.totalViews, base.totalViews), col: '#38bdf8' },
+        { label: 'Đơn hàng dự kiến / tháng', val: fmtNum(proj.orders) + ' đơn', base: fmtNum(base.orders) + ' đơn', d: deltaPct(proj.orders, base.orders), col: '#34d399' },
+        { label: 'Doanh số GMV tạo ra / tháng', val: fmtVND(proj.gmv), base: fmtVND(base.gmv), d: deltaPct(proj.gmv, base.gmv), col: '#fbbf24' },
+        { label: 'Hoa hồng Affiliate dự kiến / tháng', val: fmtVND(proj.commission), base: fmtVND(base.commission), d: deltaPct(proj.commission, base.commission), col: '#a78bfa' }
+      ].map(o => `
+        <div class="card" style="border-top:3px solid ${o.col};">
+          <div class="muted" style="font-weight:600;">${o.label}</div>
+          <div class="kpi-val" style="color:${o.col};">${o.val}</div>
+          <div class="kpi-sub flex justify-between items-center">
+            <span>Hiện tại: ${o.base}</span>
+            <span class="badge ${o.d.startsWith('+') ? 'badge-green' : 'badge-red'}">${o.d}</span>
+          </div>
+        </div>
+      `).join('');
+
+      const s1 = model(vidDay, seoPct, 55, 90, false).orders - base.orders;
+      const s2 = model(vidDay, seoPct, gmvPct, 90, false).orders - model(vidDay, seoPct, 55, 90, false).orders;
+      const s3 = model(vidDay, seoPct, gmvPct, dur, false).orders - model(vidDay, seoPct, gmvPct, 90, false).orders;
+      const s4 = proj.orders - model(vidDay, seoPct, gmvPct, dur, false).orders;
+      const levers = [
+        { name: '1. Chuẩn hóa Caption SEO + 5 Hashtag + Giãn lịch đăng', diff: s1, col: '#38bdf8' },
+        { name: '2. Đổi sang 100% Shop bật GMV Max (isAd: true)', diff: s2, col: '#a78bfa' },
+        { name: '3. Cắt gọn thời lượng tối ưu 35–60 giây (tăng giữ chân)', diff: s3, col: '#fbbf24' },
+        { name: '4. Ghim 3 video Social Proof + Bìa vàng tăng tỷ lệ chốt đơn', diff: s4, col: '#34d399' }
+      ];
+      const maxD = Math.max(...levers.map(l => Math.abs(l.diff)), 1);
+      document.getElementById('simBreakdown').innerHTML = levers.map(l => {
+        const w = Math.max((Math.abs(l.diff) / maxD) * 100, 3);
+        const sign = l.diff >= 0 ? '+' : '';
+        return `
+          <div>
+            <div class="flex justify-between mb-2">
+              <span style="color:#e2e8f0; font-weight:500;">${l.name}</span>
+              <span class="num" style="color:${l.diff >= 0 ? '#34d399' : '#fb7185'};">${sign}${l.diff} đơn/tháng</span>
+            </div>
+            <div class="bar-track" style="height:10px;">
+              <div class="bar-fill" style="width:${w}%; background:${l.diff >= 0 ? l.col : '#fb7185'};"></div>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    ['simVidDay', 'simSeoPct', 'simGmvPct', 'simDuration', 'simPinned', 'simAov', 'simComm'].forEach(id => {
+      document.getElementById(id).addEventListener('input', computeSimulation);
+    });
+    document.getElementById('simPresetCurrent').addEventListener('click', () => {
+      simVidDay.value = 10; simSeoPct.value = 10; simGmvPct.value = 50; simDuration.value = 90; simPinned.checked = false; computeSimulation();
+    });
+    document.getElementById('simPresetFix7d').addEventListener('click', () => {
+      simVidDay.value = 10; simSeoPct.value = 100; simGmvPct.value = 100; simDuration.value = 50; simPinned.checked = true; computeSimulation();
+    });
+    document.getElementById('simPresetTarget').addEventListener('click', () => {
+      simVidDay.value = 16; simSeoPct.value = 100; simGmvPct.value = 100; simDuration.value = 45; simPinned.checked = true; computeSimulation();
+    });
+
+    // ===================== 8. TAB 5: ACTION PLAN & TEMPLATES =====================
+    function renderChecklist() {
+      const baseMineAvg = Math.round((CHANNELS[2].healthScore + CHANNELS[3].healthScore) / 2);
+      const gain = CHECKLIST_ITEMS.filter(i => checkedActions.has(i.id)).reduce((s, i) => s + i.points, 0);
+      const maxGain = CHECKLIST_ITEMS.reduce((s, i) => s + i.points, 0);
+      const projScore = Math.min(98, baseMineAvg + Math.round((gain / maxGain) * (95 - baseMineAvg)));
+      const pctDone = Math.round((checkedActions.size / CHECKLIST_ITEMS.length) * 100);
+
+      document.getElementById('actionBaseScore').textContent = baseMineAvg + '/100';
+      document.getElementById('actionProjectedScore').textContent = projScore + '/100';
+      document.getElementById('actionProgressBar').style.width = pctDone + '%';
+
+      document.getElementById('checklistContainer').innerHTML = CHECKLIST_ITEMS.map(item => {
+        const done = checkedActions.has(item.id);
+        const badgeClass = item.impact === 'Cực cao' ? 'badge-red' : (item.impact === 'Cao' ? 'badge-amber' : 'badge-cyan');
+        return `
+          <label class="check-item ${done ? 'done' : ''}">
+            <input type="checkbox" data-act="${item.id}" ${done ? 'checked' : ''} style="margin-top:3px; flex-shrink:0;" />
+            <div class="row-space" style="gap:5px; flex:1;">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="badge badge-indigo">${item.day}</span>
+                <span class="badge ${badgeClass}">Tác động: ${item.impact}</span>
+                <span class="muted num">${item.channel}</span>
+              </div>
+              <div class="${done ? 'line-through' : ''}" style="font-weight:700; color:#f8fafc;">${item.title}</div>
+              <div class="muted">${item.detail}</div>
+            </div>
+          </label>`;
+      }).join('');
+
+      document.querySelectorAll('input[data-act]').forEach(cb => {
+        cb.addEventListener('change', () => {
+          if (cb.checked) checkedActions.add(cb.dataset.act);
+          else checkedActions.delete(cb.dataset.act);
+          renderChecklist();
+        });
+      });
+    }
+
+    function renderTemplates() {
+      document.getElementById('templateTabs').innerHTML = TEMPLATES.map(t => `
+        <button data-tpl="${t.key}" class="btn ${t.key === activeTemplate ? 'active' : ''}">${t.label}</button>
+      `).join('');
+      document.querySelectorAll('[data-tpl]').forEach(b => {
+        b.addEventListener('click', () => { activeTemplate = b.dataset.tpl; renderTemplates(); });
+      });
+
+      const cur = TEMPLATES.find(t => t.key === activeTemplate);
+      document.getElementById('templateBox').innerHTML = `
+        <div>
+          <div class="muted mb-2" style="font-weight:600;">1. Mô phỏng chữ trên ảnh bìa (Nền vàng chanh · Chữ đen đậm):</div>
+          <div class="tpl-cover-preview">${cur.cover}</div>
+        </div>
+        <div>
+          <div class="muted mb-2" style="font-weight:600;">2. Caption chuẩn SEO + 5 Hashtag (An toàn TPCN):</div>
+          <pre id="copyableCaption" class="tpl-pre">${cur.caption}</pre>
+        </div>`;
+    }
+
+    document.getElementById('copyTemplateBtn').addEventListener('click', async () => {
+      const txt = document.getElementById('copyableCaption')?.innerText || '';
+      try {
+        await navigator.clipboard.writeText(txt);
+        const btn = document.getElementById('copyTemplateBtn');
+        btn.textContent = '✓ Đã sao chép vào bộ nhớ tạm!';
+        setTimeout(() => { btn.textContent = 'Sao chép mẫu Caption & Hashtag'; }, 1800);
+      } catch {}
+    });
+
+    // ===================== 9. EVENTS & INIT =====================
+    document.getElementById('barMetricSelect').addEventListener('change', renderMetricBars);
+    document.getElementById('pivotGroupBy').addEventListener('change', renderPivot);
+    document.getElementById('pivotMetric').addEventListener('change', renderPivot);
+    document.getElementById('scatterX').addEventListener('change', drawScatterChart);
+    document.getElementById('scatterColor').addEventListener('change', drawScatterChart);
+    document.getElementById('vidFilterAd').addEventListener('change', renderVideoTable);
+    document.getElementById('vidFilterProduct').addEventListener('change', renderVideoTable);
+    document.getElementById('vidSearch').addEventListener('input', renderVideoTable);
+
+    function renderAll() {
+      renderChannelToggles();
+      renderKPIs();
+      renderMetricBars();
+      drawRadar();
+      renderScorecard();
+      renderPivot();
+      drawBurstChart();
+      drawScatterChart();
+      renderSellerCards();
+      renderVideoTable();
+      computeSimulation();
+      renderChecklist();
+      renderTemplates();
+    }
+
+    renderAll();
+  </script>
+</body>
+</html>
