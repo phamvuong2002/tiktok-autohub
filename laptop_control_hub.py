@@ -1,19 +1,20 @@
 # -*- coding: utf-8 -*-
 """
-TIKTOK AUTOHUB - STANDALONE LAPTOP CONTROL CENTER, 1-HOUR REMINDER & OPPO A57 HELPER
-Theo dung luong nguoi dung yeu cau:
-1. He thong TU DONG chuan bi Video da cat + Caption Tieng Viet CO DAU 100% + Len lich gian cach 1 Tieng / 1 Video.
-2. Moi 1 TIENG (60 phut), he thong TU DONG NHAC NGUOI DUNG DANG BAI:
-   - Phat chuong + Hien bang nhac tren man hinh Windows Laptop
-   - Tu dong day DUY NHAT 1 video cua khung gio do sang cuon Camera Oppo A57 & Mo san the Copy Caption Tieng Viet CO DAU tren Oppo A57.
-3. Nguoi dung tu lam buoc cuoi tren TikTok (Chon video #1 -> Dan Caption Tieng Viet co dau -> Gan gio hang -> Bam Dang),
-   sau do bam nut '[✅ Đánh Dấu Đã Đăng]' (tren Oppo A57 hoac tren Laptop) de he thong:
-   - Khoa ma SHA-256 cua video vao So cai Chong Dang Trung 3 Lop
-   - Gach bai do khoi danh sach cho & Bat dau dem nguoc 60 phut (1 tieng) cho luot nhac tiep theo!
+TIKTOK AUTOHUB - STANDALONE LAPTOP CONTROLLER, AUTO-SAVE-DRAFT (LƯU NHÁP) & 1-HOUR POST REMINDER
+Hoan thien theo dung yeu cau cua nguoi dung (khi Laptop + Oppo A57 di ra ngoai cung LAN, khac mang R630):
+1. Ket noi Oppo A57 tren mang LAN moi (10.110.8.x):
+   - Ho tro Nhap IP:Port Go loi khong day (khong can ma ghep noi 6 so vi da co khoa RSA)
+   - Ho tro Cam cap USB 3 giay (tu bat cong 5555 + tu doc IP Wi-Fi moi + tu ket noi Wi-Fi)
+   - Ho tro Tu bat IP khi Oppo A57 mo trang http://<IP-Laptop>:8099/mobile
+2. Tu dong LUU NHAP (Save Draft) tren Oppo A57 kem Caption Tieng Viet CO DAU 100%:
+   - Chuyen dung tai khoan (@suckhoeviet.2 / @suc.khoe.vang.268)
+   - Day duy nhat 1 video vao Camera -> Mo TikTok -> Chon video #1 -> Dan Caption Tieng Viet CO DAU 100% (KEYCODE_PASTE 279) -> Bam 'Nháp' (188, 1540)!
+3. Nhac lich dang moi 1 TIENG (60 phut / 1 video):
+   - Moi 60 phut: Tu dong Luu Nhap bai tiep theo lên Oppo A57 (neu chua luu nhap) + Phat chuong & Hien Popup Nhac Dang tren Laptop
+   - Nguoi dung chi can mo muc [Nháp] tren TikTok Oppo A57 -> Chon san pham GMV Max -> Bam [Đăng] -> Bam [✅ Đánh Dấu Đã Đăng]!
 """
 import ctypes
 import json
-import subprocess
 import threading
 import time
 import urllib.parse
@@ -35,28 +36,27 @@ from anti_dup_sync import (
 )
 from oppo_auto_poster import (
     auto_connect_oppo,
+    auto_save_draft_on_oppo,
     ensure_correct_tiktok_account,
     get_laptop_lan_ip,
     mark_video_as_posted,
     pair_oppo_wireless,
     quick_check_oppo_connected,
-    send_video_and_vietnamese_card_to_oppo,
+    scan_and_connect_single_ip,
 )
 
 PORT = 8099
 RUNTIME_STATE = {
     "last_action_time": datetime.now().strftime("%H:%M:%S"),
-    "last_action_result": "Sẵn sàng: Lên lịch 1 tiếng/video • Caption Tiếng Việt có dấu 100% • Nhắc đăng & Đánh dấu đã đăng",
+    "last_action_result": "Chế độ Lưu Nháp (Draft) kèm Caption Tiếng Việt có dấu 100% & Nhắc lịch đăng mỗi 1 tiếng đã sẵn sàng!",
     "next_reminder_epoch": time.time() + 3600,
-    "reminder_active_alert": False,
-    "current_due_item": None,
     "r630_sync_status": {"r630_online": False, "cached_offline_ready": 0, "total_queue": 0},
     "oppo_status": {"connected": False, "serial": None, "mode": "NONE", "detail": "Đang kiểm tra..."},
 }
 
 
 def popup_windows_reminder(title: str, message: str):
-    """Phat am thanh chuong nhac & hien Hop thoai Nhac Dang Bai tren man hinh Laptop Windows (khong chan luong)."""
+    """Phat chuong bao & hien bang Popup Nhac Dang Bai tren man hinh Windows Laptop."""
     def _alert():
         try:
             import winsound
@@ -66,7 +66,6 @@ def popup_windows_reminder(title: str, message: str):
         except Exception:
             pass
         try:
-            # MB_OK | MB_ICONINFORMATION | MB_SYSTEMMODAL (0x00001040) -> Noi len tren cung man hinh Laptop
             ctypes.windll.user32.MessageBoxW(0, message, title, 0x00001040)
         except Exception:
             pass
@@ -75,10 +74,6 @@ def popup_windows_reminder(title: str, message: str):
 
 
 def get_ready_queue_with_1h_schedule() -> list[dict]:
-    """
-    Lay danh sach cac video READY va gan khung gio len lich gian cach dung 1 TIENG / 1 VIDEO (60 phut)
-    luan phien giua @suckhoeviet.2 va @suc.khoe.vang.268.
-    """
     if not LOCAL_QUEUE_FILE.exists():
         return []
     try:
@@ -89,7 +84,6 @@ def get_ready_queue_with_1h_schedule() -> list[dict]:
     ch1 = [x for x in raw if x.get("status") != "POSTED" and x.get("channel") == "@suckhoeviet.2"]
     ch2 = [x for x in raw if x.get("status") != "POSTED" and x.get("channel") == "@suc.khoe.vang.268"]
 
-    # Tron luan phien 1 bai @suckhoeviet.2 -> 1 bai @suc.khoe.vang.268 cach nhau 1 tieng
     interleaved = []
     max_len = max(len(ch1), len(ch2))
     for i in range(max_len):
@@ -102,61 +96,75 @@ def get_ready_queue_with_1h_schedule() -> list[dict]:
     for idx, item in enumerate(interleaved):
         slot_dt = base_time + timedelta(hours=idx)
         item["scheduled_1h_slot"] = (
-            "Ngay bây giờ (Đến giờ đăng)" if idx == 0 else slot_dt.strftime("%H:%M · %d/%m/%Y (Cách %dh)" % idx)
+            "Ngay bây giờ (Khung giờ hiện tại)" if idx == 0 else slot_dt.strftime("%H:%M · %d/%m/%Y (Cách %dh)" % idx)
         )
         fname = Path(item.get("output_video", "")).name
         item["cached_offline"] = (CACHE_DIR / fname).exists()
     return interleaved
 
 
-def trigger_1hour_reminder_now() -> dict:
-    """Kich hoat nhac dang bai 1 tieng: Day san video #1 sang Oppo A57 + Mo the Copy Caption Tieng Viet + Hien Popup Laptop."""
+def trigger_1hour_draft_and_reminder() -> dict:
+    """
+    Khi den gio nhac (moi 1 tieng) hoac khi bam nut '[🔔 Lưu Nháp & Nhắc Đăng Ngay]':
+    1. Neu bai dau tien chua Luu Nhap va Oppo A57 dang ket noi -> Tu dong Chuyen TK + Day Video + Dan Caption Tieng Viet Co Dau + Bam 'Nháp'!
+    2. Phat chuong & Hien Popup nhac nguoi dung mo muc [Nháp] tren Oppo A57 -> Chon san pham -> Bam [Đăng]!
+    """
     ready = get_ready_queue_with_1h_schedule()
     if not ready:
-        return {"ok": False, "message": "Không còn video nào trong hàng chờ cần nhắc."}
+        return {"ok": False, "message": "Không còn video nào trong hàng chờ."}
 
     due_item = ready[0]
-    RUNTIME_STATE["current_due_item"] = due_item
-    RUNTIME_STATE["reminder_active_alert"] = True
+    draft_msg = "Video này đã được Lưu Nháp sẵn trên Oppo A57."
+    res = {"ok": True, "item": due_item}
 
-    res = send_video_and_vietnamese_card_to_oppo(item_id=due_item["id"], switch_account=True)
+    oppo_now = quick_check_oppo_connected()
+    if due_item.get("status") != "SAVED_DRAFT" and oppo_now.get("connected"):
+        res = auto_save_draft_on_oppo(item_id=due_item["id"])
+        draft_msg = res.get("message", "")
+    elif not oppo_now.get("connected"):
+        draft_msg = "⚠️ Lưu ý: Oppo A57 chưa kết nối ADB nên hệ thống chưa tự bấm Lưu Nháp được. Hãy kết nối Oppo A57 để hệ thống tự động Lưu Nháp!"
+
     RUNTIME_STATE["last_action_time"] = datetime.now().strftime("%H:%M:%S")
-    RUNTIME_STATE["last_action_result"] = f"🔔 ĐẾN GIỜ ĐĂNG (1 Tiếng/Video): {res.get('message', '')}"
+    RUNTIME_STATE["last_action_result"] = f"🔔 NHẮC LỊCH ĐĂNG (1 Tiếng/Video - {due_item['channel']}): {draft_msg}"
 
     popup_windows_reminder(
-        "⏰ ĐẾN GIỜ ĐĂNG VIDEO TIKTOK (GIÃN CÁCH 1 TIẾNG / 1 VIDEO)",
-        f"Đã đến giờ đăng bài tiếp theo!\n\n"
-        f"• Tài khoản: {due_item['channel']}\n"
-        f"• Sản phẩm: {due_item['product_name']}\n"
+        "⏰ ĐẾN GIỜ ĐĂNG VIDEO TIKTOK TỪ MỤC [NHÁP] (1 TIẾNG / 1 VIDEO)",
+        f"Đã đến khung giờ đăng bài tiếp theo!\n\n"
+        f"• Tài khoản TikTok: {due_item['channel']}\n"
+        f"• Sản phẩm cần chọn: {due_item['product_name']}\n"
         f"• Shop GMV Max ID: {due_item['seller_id']}\n\n"
-        f"Hệ thống đã:\n"
-        f"1) Copy sẵn Caption Tiếng Việt CÓ DẤU vào Clipboard.\n"
-        f"2) Đẩy duy nhất video này vào đầu cuộn Camera Oppo A57 & mở sẵn thẻ Copy Caption Tiếng Việt trên điện thoại.\n\n"
-        f"👉 Sau khi bạn tự đăng xong trên Oppo A57, hãy bấm nút [✅ Đánh Dấu Đã Đăng] để hệ thống khóa chống trùng và hẹn nhắc 1 tiếng tiếp theo!",
+        f"Trạng thái trên Oppo A57:\n{draft_msg}\n\n"
+        f"👉 BẠN CHỈ CẦN LÀM 2 BƯỚC CUỐI TRÊN OPPO A57:\n"
+        f"1) Mở mục [Nháp] trong Hồ sơ kênh {due_item['channel']} -> Chọn Sản Phẩm -> Bấm [Đăng].\n"
+        f"2) Bấm nút màu xanh [✅ 2. Đánh Dấu Đã Đăng] trên bảng điều khiển để khóa chống trùng và hẹn nhắc 1 tiếng sau!",
     )
     return res
 
 
 def background_scheduler_loop():
-    """Luong chay ngam: Dong bo kho video Offline tu R630 & Dem nguoc nhac dang bai moi 60 phut (1 tieng)."""
     init_db()
     last_sync_ts = 0.0
     while True:
         try:
             now = time.time()
-            if now - last_sync_ts >= 120:
+            # Tu dong kiem tra neu nguoi dung vua cam cap USB -> Tu bat IP Wi-Fi moi va mo cong 5555!
+            q = quick_check_oppo_connected()
+            if q.get("connected") and q.get("mode") == "USB":
+                RUNTIME_STATE["oppo_status"] = auto_connect_oppo()
+
+            if now - last_sync_ts >= 180:
                 RUNTIME_STATE["r630_sync_status"] = sync_from_r630_to_laptop_cache()
                 last_sync_ts = now
 
             cfg = get_settings()
             if cfg.get("auto_scheduler_enabled", True):
                 if now >= RUNTIME_STATE["next_reminder_epoch"]:
-                    trigger_1hour_reminder_now()
+                    trigger_1hour_draft_and_reminder()
                     interval_sec = max(15, int(cfg.get("interval_minutes", 60))) * 60
                     RUNTIME_STATE["next_reminder_epoch"] = time.time() + interval_sec
         except Exception as e:
             RUNTIME_STATE["last_action_result"] = f"Lỗi luồng nền: {e}"
-        time.sleep(10)
+        time.sleep(8)
 
 
 class LaptopHubHandler(BaseHTTPRequestHandler):
@@ -174,6 +182,16 @@ class LaptopHubHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
         qs = urllib.parse.parse_qs(parsed.query)
+        client_ip = self.client_address[0]
+
+        # Neu Oppo A57 truy cap bat ky trang nao (/mobile hoac /auto_copy), tu dong ghi nhan IP cua Oppo A57 tren mang LAN moi!
+        if client_ip not in ("127.0.0.1", "::1", get_laptop_lan_ip()):
+            cfg = get_settings()
+            if cfg.get("oppo_last_ip") != client_ip:
+                cfg["oppo_last_ip"] = client_ip
+                SETTINGS_FILE.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+            if not quick_check_oppo_connected().get("connected"):
+                threading.Thread(target=scan_and_connect_single_ip, args=(client_ip,), daemon=True).start()
 
         if parsed.path == "/api/status":
             cfg = get_settings()
@@ -195,6 +213,43 @@ class LaptopHubHandler(BaseHTTPRequestHandler):
                 "ready_queue": ready_queue[:24],
             })
 
+        if parsed.path == "/auto_copy":
+            # Trang Full-Screen 720x1600 phuc vu copy_vietnamese_to_oppo_clipboard()
+            item_id = qs.get("id", [""])[0]
+            ready = get_ready_queue_with_1h_schedule()
+            item = next((x for x in ready if x.get("id") == item_id), ready[0] if ready else None)
+            cap = item["caption_seo"] if item else ""
+            cap_json = json.dumps(cap, ensure_ascii=False)
+            html = f"""<!DOCTYPE html><html><head><meta charset="utf-8">
+            <meta name="viewport" content="width=device-width,initial-scale=1"></head>
+            <body style="margin:0;padding:0;background:#0b0f19;">
+            <button id="fsbtn" onclick="doCopy()" style="width:100vw;height:100vh;background:#131b2e;color:#fde047;border:4px solid #fde047;font-size:22px;font-weight:bold;padding:24px;">
+              CHẠM ĐỂ NẠP CAPTION TIẾNG VIỆT CÓ DẤU VÀO CLIPBOARD OPPO A57
+            </button>
+            <script>
+            const TXT = {cap_json};
+            function doCopy() {{
+              if (navigator.clipboard && navigator.clipboard.writeText) {{
+                navigator.clipboard.writeText(TXT);
+              }}
+              const ta = document.createElement('textarea');
+              ta.value = TXT;
+              document.body.appendChild(ta);
+              ta.select();
+              document.execCommand('copy');
+              document.body.removeChild(ta);
+              document.getElementById('fsbtn').style.background = '#166534';
+              document.getElementById('fsbtn').textContent = '✓ ĐÃ COPY CAPTION TIẾNG VIỆT CÓ DẤU!';
+            }}
+            </script></body></html>"""
+            raw = html.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+            return
+
         if parsed.path == "/video":
             fname = Path(qs.get("file", [""])[0]).name
             fpath = CACHE_DIR / fname
@@ -212,7 +267,7 @@ class LaptopHubHandler(BaseHTTPRequestHandler):
 
         if parsed.path == "/mobile":
             item_id = qs.get("id", [""])[0]
-            html = self._build_mobile_oppo_card_html(item_id)
+            html = self._build_mobile_oppo_card_html(item_id, client_ip)
             raw = html.encode("utf-8")
             self.send_response(200)
             self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -253,7 +308,7 @@ class LaptopHubHandler(BaseHTTPRequestHandler):
             RUNTIME_STATE["r630_sync_status"] = res
             RUNTIME_STATE["last_action_time"] = datetime.now().strftime("%H:%M:%S")
             RUNTIME_STATE["last_action_result"] = (
-                f"Đã đồng bộ kho video từ R630: {res['cached_offline_ready']} video đã lưu sẵn trong ổ C: Laptop."
+                f"Kho Offline Laptop: {res['cached_offline_ready']} video sẵn sàng (R630 {'Online' if res['r630_online'] else 'Đang khác mạng - Dùng Cache Offline'})."
             )
             return self._send_json(res)
 
@@ -267,10 +322,10 @@ class LaptopHubHandler(BaseHTTPRequestHandler):
             RUNTIME_STATE["last_action_result"] = msg
             return self._send_json({"ok": ok, "message": msg})
 
-        if parsed.path == "/api/prepare_on_oppo":
+        if parsed.path == "/api/save_draft_on_oppo":
             item_id = body.get("item_id") or None
             ch = body.get("channel") or None
-            res = send_video_and_vietnamese_card_to_oppo(item_id=item_id, channel=ch, switch_account=True)
+            res = auto_save_draft_on_oppo(item_id=item_id, channel=ch)
             RUNTIME_STATE["last_action_time"] = datetime.now().strftime("%H:%M:%S")
             RUNTIME_STATE["last_action_result"] = res.get("message", "")
             return self._send_json(res)
@@ -281,28 +336,13 @@ class LaptopHubHandler(BaseHTTPRequestHandler):
             RUNTIME_STATE["last_action_time"] = datetime.now().strftime("%H:%M:%S")
             RUNTIME_STATE["last_action_result"] = res.get("message", "")
             if res.get("ok"):
-                # Reset bo dem nguoc 60 phut (1 tieng) ke tu luc nguoi dung danh dau da dang!
                 cfg = get_settings()
                 interval_sec = max(15, int(cfg.get("interval_minutes", 60))) * 60
                 RUNTIME_STATE["next_reminder_epoch"] = time.time() + interval_sec
-                RUNTIME_STATE["reminder_active_alert"] = False
             return self._send_json(res)
 
-        if parsed.path == "/api/update_caption":
-            item_id = body.get("item_id", "")
-            new_cap = (body.get("caption_seo") or "").strip()
-            if LOCAL_QUEUE_FILE.exists() and item_id and new_cap:
-                q = json.loads(LOCAL_QUEUE_FILE.read_text(encoding="utf-8"))
-                for x in q:
-                    if x.get("id") == item_id:
-                        x["caption_seo"] = new_cap
-                        break
-                LOCAL_QUEUE_FILE.write_text(json.dumps(q, ensure_ascii=False, indent=2), encoding="utf-8")
-                return self._send_json({"ok": True, "message": "Đã lưu Caption Tiếng Việt mới!"})
-            return self._send_json({"ok": False, "message": "Dữ liệu không hợp lệ"})
-
         if parsed.path == "/api/trigger_reminder_now":
-            res = trigger_1hour_reminder_now()
+            res = trigger_1hour_draft_and_reminder()
             return self._send_json(res)
 
         if parsed.path == "/api/update_settings":
@@ -315,18 +355,17 @@ class LaptopHubHandler(BaseHTTPRequestHandler):
                 RUNTIME_STATE["next_reminder_epoch"] = time.time() + int(cfg.get("interval_minutes", 60)) * 60
             RUNTIME_STATE["last_action_time"] = datetime.now().strftime("%H:%M:%S")
             RUNTIME_STATE["last_action_result"] = (
-                f"Đã cập nhật bộ nhắc đăng 1 tiếng/video: {'ĐANG BẬT' if cfg['auto_scheduler_enabled'] else 'ĐANG TẮT'}"
+                f"Đã cập nhật bộ nhắc đăng & lưu nháp 1 tiếng/video: {'ĐANG BẬT' if cfg['auto_scheduler_enabled'] else 'ĐANG TẮT'}"
             )
             return self._send_json({"ok": True, "settings": cfg})
 
         self.send_error(404)
 
-    def _build_mobile_oppo_card_html(self, item_id: str) -> str:
-        """Giao dien tinh gon mo truc tiep tren man hinh Oppo A57: 1 cham Copy Caption Tieng Viet Co Dau & Danh Dau Da Dang."""
+    def _build_mobile_oppo_card_html(self, item_id: str, client_ip: str) -> str:
         ready = get_ready_queue_with_1h_schedule()
         item = next((x for x in ready if x.get("id") == item_id), ready[0] if ready else None)
         if not item:
-            return "<h2 style='color:white;background:#0b0f19;padding:20px;font-family:sans-serif;'>Đã đăng hết toàn bộ video trong hàng chờ!</h2>"
+            return "<h2 style='color:white;background:#0b0f19;padding:20px;font-family:sans-serif;'>Đã hoàn tất toàn bộ video trong hàng chờ!</h2>"
 
         fname = Path(item.get("output_video", "")).name
         cap_json = json.dumps(item["caption_seo"], ensure_ascii=False)
@@ -335,46 +374,41 @@ class LaptopHubHandler(BaseHTTPRequestHandler):
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Oppo A57 — Copy Caption Tiếng Việt & Đăng TikTok</title>
+<title>Oppo A57 — Kết Nối LAN & Lưu Nháp TikTok</title>
 <style>
   body {{ margin:0; padding:16px; background:#0b0f19; color:#f8fafc; font-family:'Segoe UI',system-ui,sans-serif; }}
   .card {{ background:#131b2e; border:2px solid #fde047; border-radius:16px; padding:18px; max-width:520px; margin:0 auto; }}
   .ch {{ font-size:20px; font-weight:800; color:#fde047; margin-bottom:6px; }}
-  .sub {{ font-size:13px; color:#94a3b8; margin-bottom:12px; }}
+  .sub {{ font-size:13px; color:#94a3b8; margin-bottom:12px; line-height:1.5; }}
   .cap-box {{ background:#090d16; border:1px solid #334155; border-radius:12px; padding:14px;
               font-size:15px; line-height:1.55; white-space:pre-line; color:#fff; margin-bottom:14px; }}
   .btn {{ width:100%; border:none; border-radius:12px; padding:15px; font-size:16px; font-weight:800;
           cursor:pointer; margin-bottom:10px; display:block; text-align:center; text-decoration:none; }}
   .btn-yellow {{ background:#fde047; color:#000; }}
   .btn-green {{ background:#22c55e; color:#052e16; }}
-  .btn-blue {{ background:#38bdf8; color:#082f49; }}
 </style>
 </head>
 <body>
 <div class="card">
-  <div class="ch">🎯 Kênh đăng: {item['channel']}</div>
+  <div style="background:rgba(34,197,94,0.18);border:1px solid #22c55e;color:#4ade80;padding:8px 12px;border-radius:8px;font-size:13px;font-weight:700;margin-bottom:10px;">
+    📡 Laptop đã tự động nhận diện IP Oppo A57 của bạn trên mạng LAN mới: <code>{client_ip}</code>
+  </div>
+  <div class="ch">🎯 Kênh: {item['channel']}</div>
   <div class="sub">
     <b>Sản phẩm gắn giỏ:</b> {item['product_name']}<br>
     <b>Shop GMV Max ID:</b> <code>{item['seller_id']}</code><br>
-    <b>File video (đã nằm ở vị trí #1 trong Camera):</b> <code>{fname}</code>
+    <b>Trạng thái:</b> {item.get('status', 'READY')}
   </div>
 
-  <div style="font-size:13px; color:#fde047; font-weight:700; margin-bottom:6px;">
-    📝 CAPTION TIẾNG VIỆT CÓ DẤU + 5 HASHTAG CHUẨN SEO:
-  </div>
-  <div class="cap-box" id="vn-cap">{item['caption_seo']}</div>
+  <div class="cap-box">{item['caption_seo']}</div>
 
   <button class="btn btn-yellow" id="btn-copy" onclick="copyVietnameseCaption()">
-    📋 BƯỚC 1: CHẠM ĐỂ COPY CAPTION TIẾNG VIỆT CÓ DẤU
+    📋 COPY CAPTION TIẾNG VIỆT CÓ DẤU (DỰ PHÒNG)
   </button>
 
   <button class="btn btn-green" id="btn-done" onclick="markPosted('{item['id']}')">
-    ✅ BƯỚC 2: ĐÁNH DẤU ĐÃ ĐĂNG (KHÓA CHỐNG TRÙNG & HẸN 1 TIẾNG SAU)
+    ✅ ĐÁNH DẤU ĐÃ ĐĂNG TỪ NHÁP (HẸN NHẮC 1 TIẾNG SAU)
   </button>
-
-  <a class="btn btn-blue" href="/video?file={urllib.parse.quote(fname)}">
-    ⬇️ Tải lại file Video .MP4 (Nếu cần)
-  </a>
 </div>
 
 <script>
@@ -382,22 +416,19 @@ const CAPTION_TEXT = {cap_json};
 function copyVietnameseCaption() {{
   if (navigator.clipboard && navigator.clipboard.writeText) {{
     navigator.clipboard.writeText(CAPTION_TEXT);
-  }} else {{
-    const ta = document.createElement('textarea');
-    ta.value = CAPTION_TEXT;
-    document.body.appendChild(ta);
-    ta.select();
-    document.execCommand('copy');
-    document.body.removeChild(ta);
   }}
+  const ta = document.createElement('textarea');
+  ta.value = CAPTION_TEXT;
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand('copy');
+  document.body.removeChild(ta);
   const b = document.getElementById('btn-copy');
-  b.textContent = '✓ ĐÃ COPY CAPTION TIẾNG VIỆT CÓ DẤU! HÃY DÁN VÀO TIKTOK';
+  b.textContent = '✓ ĐÃ COPY CAPTION TIẾNG VIỆT CÓ DẤU!';
   b.style.background = '#4ade80';
 }}
 
 async function markPosted(itemId) {{
-  const b = document.getElementById('btn-done');
-  b.textContent = 'Đang khóa Sổ cái chống trùng...';
   const r = await fetch('/api/mark_posted', {{
     method: 'POST',
     headers: {{'Content-Type': 'application/json'}},
@@ -417,7 +448,7 @@ async function markPosted(itemId) {{
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>TikTok AutoHub — Lịch Đăng 1 Tiếng/Video & Caption Tiếng Việt Có Dấu</title>
+<title>TikTok AutoHub — Tự Động Lưu Nháp (Caption Tiếng Việt) & Nhắc Lịch 1 Tiếng/Video</title>
 <style>
   :root {
     --bg: #0b0f19; --card: #131b2e; --border: #26324d;
@@ -426,7 +457,7 @@ async function markPosted(itemId) {{
   }
   * { box-sizing: border-box; font-family: 'Segoe UI', system-ui, sans-serif; }
   body { margin: 0; padding: 20px; background: var(--bg); color: var(--text); }
-  .wrap { max-width: 1340px; margin: 0 auto; }
+  .wrap { max-width: 1360px; margin: 0 auto; }
   .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;
             background: linear-gradient(135deg, #162038, #0f172a); padding: 18px 22px; border-radius: 14px;
             border: 1px solid var(--border); margin-bottom: 18px; }
@@ -439,6 +470,7 @@ async function markPosted(itemId) {{
   .b-ok { background: rgba(34,197,94,0.18); color: #4ade80; border: 1px solid #22c55e; }
   .b-warn { background: rgba(239,68,68,0.18); color: #f87171; border: 1px solid #ef4444; }
   .b-info { background: rgba(56,189,248,0.18); color: #38bdf8; border: 1px solid #0284c7; }
+  .b-draft { background: rgba(253,224,71,0.18); color: #fde047; border: 1px solid #eab308; }
   .btn { cursor: pointer; border: none; border-radius: 9px; padding: 9px 13px; font-weight: 700; font-size: 13px;
          transition: 0.15s; display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
   .btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
@@ -450,91 +482,91 @@ async function markPosted(itemId) {{
   .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
   .log-bar { background: #0f172a; border-left: 4px solid var(--accent); padding: 12px 16px;
              border-radius: 8px; margin-bottom: 18px; font-size: 14px; }
-  .timer-box { font-size: 24px; font-weight: 800; color: #4ade80; margin: 8px 0; }
+  .timer-box { font-size: 23px; font-weight: 800; color: #4ade80; margin: 8px 0; }
   table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }
   th, td { text-align: left; padding: 12px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
   th { color: var(--muted); font-size: 12px; text-transform: uppercase; }
   .mono { font-family: Consolas, monospace; font-size: 12px; color: #38bdf8; }
   .cap-card { background: #090d16; border: 1px solid #26324d; border-radius: 10px; padding: 10px 12px;
-              white-space: pre-line; font-size: 13px; line-height: 1.5; color: #f8fafc; min-width: 360px; }
+              white-space: pre-line; font-size: 13px; line-height: 1.5; color: #f8fafc; min-width: 350px; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="header">
     <div>
-      <div class="title">⚡ TIKTOK AUTOHUB — QUẢN LÝ VIDEO, CAPTION TIẾNG VIỆT & NHẮC LỊCH 1 TIẾNG / VIDEO</div>
-      <div class="sub">Hệ thống tự cắt video, chuẩn bị Caption Tiếng Việt có dấu 100%, nhắc bạn đăng mỗi 1 tiếng và đánh dấu khóa chống trùng</div>
+      <div class="title">⚡ TIKTOK AUTOHUB — TỰ ĐỘNG LƯU NHÁP (CAPTION TIẾNG VIỆT) & NHẮC LỊCH 1 TIẾNG / VIDEO</div>
+      <div class="sub">Chế độ Đi Ra Ngoài (Offline Cache): Tự chuyển tài khoản • Đẩy Video • Dán Caption Tiếng Việt có dấu • Bấm Lưu Nháp • Nhắc bạn chọn Sản phẩm & Đăng mỗi 1 tiếng</div>
     </div>
     <div id="top-badges" class="row"></div>
   </div>
 
   <div class="log-bar">
-    <strong>Trạng thái mới nhất:</strong> <span id="last-msg">Đang tải...</span>
+    <strong>Trạng thái thực thi:</strong> <span id="last-msg">Đang tải...</span>
   </div>
 
   <div class="grid">
-    <!-- CARD 1: BO DEM NGUOC NHAC DANG MOI 1 TIENG -->
+    <!-- CARD 1: KET NOI OPPO A57 TREN MANG LAN MOI (KHAC MANG R630) -->
     <div class="card">
-      <h3>⏰ 1. Bộ Nhắc Đăng Video Mỗi 1 Tiếng (60 Phút / Video)</h3>
+      <h3>📱 1. Kết Nối Oppo A57 Trên Mạng LAN Hiện Tại (Khác Mạng R630)</h3>
+      <div id="oppo-detail" style="font-size:13px; color:var(--muted); margin-bottom:8px;">Đang kiểm tra...</div>
+      <div class="row">
+        <input id="manual-ip" placeholder="Nhập IP:Port Gỡ lỗi không dây (vd 10.110.8.xx:xxxxx)" style="flex:1; min-width:210px;">
+        <button class="btn btn-yellow" onclick="connectOppo(document.getElementById('manual-ip').value)">🔌 Nối Ngay</button>
+      </div>
+      <div id="lan-tip" style="font-size:12px; color:var(--muted); margin-top:10px; line-height:1.55;"></div>
+    </div>
+
+    <!-- CARD 2: BO NHAC LICH DANG & TU DONG LUU NHAP MOI 1 TIENG -->
+    <div class="card">
+      <h3>⏰ 2. Bộ Nhắc Lịch Đăng & Tự Động Lưu Nháp (1 Tiếng / Video)</h3>
       <div style="font-size:13px; color:var(--muted);">
-        Cứ mỗi 60 phút (hoặc sau khi bạn bấm <b>✅ Đánh Dấu Đã Đăng</b> đúng 1 tiếng), Laptop sẽ đổ chuông + bật bảng nhắc và đẩy sẵn video tiếp theo sang Camera Oppo A57:
+        Mỗi 60 phút, hệ thống tự động đẩy bài tiếp theo vào mục <b>[Nháp]</b> trên Oppo A57 (kèm Caption Tiếng Việt có dấu) và bật chuông + Popup nhắc bạn chọn sản phẩm & bấm Đăng:
       </div>
       <div class="timer-box" id="countdown-timer">⏳ Đang tính thời gian...</div>
       <div class="row">
-        <button id="btn-toggle-sched" class="btn btn-green" onclick="toggleScheduler()">⏰ Bật Nhắc Lịch 1 Tiếng / Video</button>
-        <button class="btn btn-yellow" onclick="triggerReminderNow()">🔔 Nhắc & Đẩy Bài Tiếp Theo Ngay</button>
+        <button class="btn btn-yellow" onclick="triggerReminderNow()">📝 Lưu Nháp & Nhắc Đăng Bài Tiếp Theo Ngay</button>
+        <button id="btn-toggle-sched" class="btn btn-dark" onclick="toggleScheduler()">⏸️ Tắt Nhắc Tự Động</button>
       </div>
     </div>
 
-    <!-- CARD 2: KET NOI OPPO A57 & MO THE COPY TREN DIEN THOAI -->
+    <!-- CARD 3: KHO VIDEO OFFLINE & TEST CHUYEN TAI KHOAN -->
     <div class="card">
-      <h3>📱 2. Kết Nối Oppo A57 & Trang Copy Tiếng Việt Trên Điện Thoại</h3>
-      <div id="oppo-detail" style="font-size:13px; color:var(--muted); margin-bottom:8px;">Đang kiểm tra...</div>
-      <div id="mobile-url-box" style="font-size:13px; background:#090d16; padding:8px 10px; border-radius:8px; border:1px solid var(--border);"></div>
+      <h3>📦 3. Kho Video Offline Trên Laptop & Chuyển 4 Tài Khoản</h3>
+      <div id="cache-detail" style="font-size:13px; color:var(--muted); margin-bottom:10px;">Đang kiểm tra...</div>
       <div class="row">
-        <button class="btn btn-yellow" onclick="connectOppo('')">🔌 Tự Động Tìm & Nối Oppo A57</button>
         <button class="btn btn-dark" onclick="testSwitch('@suckhoeviet.2')">🔄 Chuyển sang @suckhoeviet.2</button>
         <button class="btn btn-dark" onclick="testSwitch('@suc.khoe.vang.268')">🔄 Chuyển sang @suc.khoe.vang.268</button>
       </div>
-    </div>
-
-    <!-- CARD 3: KHO VIDEO OFFLINE TREN LAPTOP -->
-    <div class="card">
-      <h3>📦 3. Kho Video Đã Lưu Sẵn Trên Laptop (Đi Ra Ngoài)</h3>
-      <div id="cache-detail" style="font-size:13px; color:var(--muted); margin-bottom:10px;">Đang kiểm tra...</div>
       <div class="row">
-        <button class="btn btn-blue" onclick="syncR630()">📥 Đồng Bộ Video Mới Từ R630 Về Laptop</button>
-      </div>
-      <div style="font-size:12px; color:var(--muted); margin-top:10px; line-height:1.5;">
-        • Khi bấm <b>📲 Đẩy Video Sang Oppo A57</b> ở bảng dưới, hệ thống sẽ xóa video cũ trong Camera điện thoại, chỉ để lại <b>duy nhất 1 video</b> ở vị trí #1 và mở sẵn thẻ Copy Caption Tiếng Việt có dấu trên Oppo A57.
+        <button class="btn btn-blue" onclick="syncR630()">📥 Kiểm Tra / Đồng Bộ Kho Video R630</button>
       </div>
     </div>
   </div>
 
-  <!-- BANG LICH DANG 1 TIENG / 1 VIDEO + CAPTION TIENG VIET CO DAU + NUT DANH DAU DA DANG -->
+  <!-- BANG LICH DANG 1 TIENG / 1 VIDEO + NUT TU DONG LUU NHAP & DANH DAU DA DANG -->
   <div class="card" style="margin-bottom:18px;">
-    <h3>📅 Lịch Đăng Video Giãn Cách 1 Tiếng / 1 Bài (Caption Tiếng Việt Có Dấu 100% & Đánh Dấu Đã Đăng)</h3>
+    <h3>📅 Danh Sách Video Lên Lịch (1 Tiếng / 1 Video) — Tự Động Lưu Nháp & Đánh Dấu Đã Đăng</h3>
     <table>
       <thead>
         <tr>
-          <th style="width:170px;">Khung Giờ (Cách 1h) & Kênh</th>
-          <th style="width:240px;">Sản Phẩm & Shop GMV Max</th>
-          <th>Caption Tiếng Việt Có Dấu + 5 Hashtag Chuẩn SEO</th>
-          <th style="width:290px;">Thao Tác Chuẩn Bị & Đánh Dấu Đã Đăng</th>
+          <th style="width:185px;">Khung Giờ (Cách 1h) & Kênh</th>
+          <th style="width:240px;">Sản Phẩm Cần Chọn Khi Đăng</th>
+          <th>Caption Tiếng Việt Có Dấu + 5 Hashtag (Tự động dán vào Nháp)</th>
+          <th style="width:300px;">Thao Tác Tự Động Lưu Nháp & Đánh Dấu Đăng</th>
         </tr>
       </thead>
       <tbody id="queue-tbody"></tbody>
     </table>
   </div>
 
-  <!-- BANG SO CAI CHONG DANG TRUNG 3 LOP (CAC VIDEO DA DANH DAU DANG) -->
+  <!-- BANG SO CAI CHONG DANG TRUNG 3 LOP -->
   <div class="card">
-    <h3>🛡️ Lịch Sử Các Video Bạn Đã Đánh Dấu Đăng (Đã Khóa Chống Trùng SHA-256)</h3>
+    <h3>🛡️ Sổ Cái Chống Đăng Trùng 3 Lớp (Các Video Đã Đăng Từ Nháp — Khóa Cứng SHA-256)</h3>
     <table>
       <thead>
         <tr>
-          <th>Thời gian đánh dấu</th>
+          <th>Thời gian đăng</th>
           <th>Tài khoản</th>
           <th>Clip Gốc</th>
           <th>Sản phẩm</th>
@@ -542,9 +574,7 @@ async function markPosted(itemId) {{
           <th>Trạng thái</th>
         </tr>
       </thead>
-      <tbody id="ledger-tbody">
-        <tr><td colspan="6" style="color:var(--muted);">Chưa có video nào được đánh dấu đã đăng.</td></tr>
-      </tbody>
+      <tbody id="ledger-tbody"></tbody>
     </table>
   </div>
 </div>
@@ -565,7 +595,7 @@ setInterval(() => {
   const el = document.getElementById('countdown-timer');
   if (el) {
     el.textContent = currentSettings.auto_scheduler_enabled
-      ? `⏳ Nhắc bài tiếp theo sau: ${formatMMSS(remainingSeconds)}`
+      ? `⏳ Nhắc đăng bài tiếp theo sau: ${formatMMSS(remainingSeconds)}`
       : `⏸️ Đang tạm dừng bộ nhắc tự động`;
   }
 }, 1000);
@@ -582,25 +612,28 @@ async function refreshStatus() {
     document.getElementById('last-msg').textContent =
       `[${data.runtime.last_action_time}] ${data.runtime.last_action_result}`;
 
-    document.getElementById('mobile-url-box').innerHTML =
-      `🌐 Trang mở trên trình duyệt Oppo A57 (cùng Wi-Fi): <a href="http://${data.lan_ip}:8099/mobile" target="_blank" style="color:var(--accent);font-weight:700;">http://${data.lan_ip}:8099/mobile</a>`;
+    document.getElementById('lan-tip').innerHTML =
+      `💡 <b>3 cách kết nối Oppo A57 trên mạng LAN mới (${data.lan_ip}) không cần mã 6 số:</b><br>` +
+      `1) Bật <i>Gỡ lỗi không dây</i> trên Oppo A57 -> Nhập dãy <code>IP:Cổng</code> hiện trên điện thoại vào ô trên rồi bấm <b>Nối Ngay</b>.<br>` +
+      `2) Hoặc <b>cắm cáp USB 3 giây</b> vào Laptop (hệ thống tự bắt IP Wi-Fi mới & mở cổng <code>5555</code> để rút cáp dùng Wi-Fi).<br>` +
+      `3) Hoặc mở <a href="http://${data.lan_ip}:8099/mobile" target="_blank" style="color:var(--accent);font-weight:700;">http://${data.lan_ip}:8099/mobile</a> trên trình duyệt Oppo A57 để Laptop tự bắt IP điện thoại!`;
 
     const badges = [];
     if (oppo.connected) {
-      badges.push(`<span class="badge b-ok">📱 Oppo A57: ĐÃ KẾT NỐI (${oppo.mode})</span>`);
+      badges.push(`<span class="badge b-ok">📱 Oppo A57: ĐÃ KẾT NỐI (${oppo.serial} • ${oppo.mode})</span>`);
     } else {
-      badges.push(`<span class="badge b-warn">📱 Oppo A57: CHƯA KẾT NỐI</span>`);
+      badges.push(`<span class="badge b-warn">📱 Oppo A57: CHƯA KẾT NỐI TRÊN MẠNG MỚI</span>`);
     }
     badges.push(`<span class="badge b-info">📦 Kho Offline Laptop: ${r630.cached_offline_ready || 0} Video sẵn sàng</span>`);
     badges.push(`<span class="badge b-ok">🛡️ Đã Đăng & Khóa Chống Trùng: ${(data.ledger || []).length} Video</span>`);
     document.getElementById('top-badges').innerHTML = badges.join('');
 
     document.getElementById('oppo-detail').innerHTML = oppo.connected
-      ? `<span style="color:#4ade80;font-weight:700;">✓ Đã kết nối Oppo A57 (${oppo.serial})</span>`
-      : `<span>${oppo.detail || 'Chưa kết nối'}</span>`;
+      ? `<span style="color:#4ade80;font-weight:700;">✓ Đã kết nối Oppo A57 (${oppo.serial})</span> — Sẵn sàng tự động Lưu Nháp!`
+      : `<span style="color:#f87171;">${oppo.detail || 'Chưa kết nối'}</span>`;
 
     document.getElementById('cache-detail').innerHTML =
-      `Kho video Offline trên Laptop (<code>C:\\TikTok_AutoHub\\video_cache</code>): <b>${r630.cached_offline_ready || 0}</b> video đã tải sẵn / <b>${r630.total_queue || 0}</b> bài chờ đăng.`;
+      `Đang dùng Kho Video Offline trên Laptop (<code>C:\\TikTok_AutoHub\\video_cache</code>): <b>${r630.cached_offline_ready || 0}</b> video đã tải sẵn (Hoạt động độc lập không cần R630).`;
 
     const btnSched = document.getElementById('btn-toggle-sched');
     if (currentSettings.auto_scheduler_enabled) {
@@ -611,7 +644,6 @@ async function refreshStatus() {
       btnSched.className = 'btn btn-green';
     }
 
-    // Render Queue
     const qt = document.getElementById('queue-tbody');
     if (data.ready_queue && data.ready_queue.length > 0) {
       queueMap = {};
@@ -619,6 +651,7 @@ async function refreshStatus() {
         queueMap[item.id] = item;
         const fname = (item.output_video || '').split('/').pop();
         const isFirst = idx === 0;
+        const isDrafted = item.status === 'SAVED_DRAFT';
         return `
           <tr style="${isFirst ? 'background:rgba(253,224,71,0.06);' : ''}">
             <td>
@@ -627,7 +660,9 @@ async function refreshStatus() {
               </div>
               <div style="font-size:15px; font-weight:800; color:var(--accent);">${item.channel}</div>
               <div style="margin-top:6px;">
-                ${item.cached_offline ? '<span class="badge b-ok">✓ Đã lưu ổ C:</span>' : '<span class="badge b-warn">Chờ tải</span>'}
+                ${isDrafted
+                  ? `<span class="badge b-draft">📝 ĐÃ LƯU NHÁP TRÊN OPPO A57 (${item.drafted_at || ''})</span>`
+                  : (item.cached_offline ? '<span class="badge b-ok">✓ Sẵn sàng trong ổ C:</span>' : '<span class="badge b-warn">Chờ tải</span>')}
               </div>
             </td>
             <td>
@@ -636,22 +671,19 @@ async function refreshStatus() {
               <span style="font-size:11px; color:var(--muted);">File: ${fname}</span>
             </td>
             <td>
-              <div class="cap-card" id="cap-${item.id}">${item.caption_seo}</div>
+              <div class="cap-card">${item.caption_seo}</div>
             </td>
             <td>
               <div style="display:flex; flex-direction:column; gap:8px;">
-                <button class="btn btn-yellow" onclick="prepareOnOppo('${item.id}')">
-                  📲 1. Đẩy Video + Mở Thẻ Copy Trên Oppo A57
+                <button class="btn btn-yellow" onclick="saveDraftOnOppo('${item.id}')">
+                  📝 1. Tự Động Đẩy Video + Dán Tiếng Việt & Lưu Nháp
+                </button>
+                <button class="btn btn-green" onclick="markPosted('${item.id}')">
+                  ✅ 2. Đánh Dấu Đã Đăng Từ Nháp (Hẹn Nhắc 1 Tiếng)
                 </button>
                 <button class="btn btn-blue" id="cpbtn-${item.id}" onclick="copyCap('${item.id}')">
                   📋 Copy Caption Tiếng Việt Có Dấu
                 </button>
-                <button class="btn btn-green" onclick="markPosted('${item.id}')">
-                  ✅ 2. Đánh Dấu Đã Đăng (Khóa Chống Trùng)
-                </button>
-                <a class="btn btn-dark" href="/video?file=${encodeURIComponent(fname)}" target="_blank">
-                  👁️ Xem / Tải File Video (.MP4)
-                </a>
               </div>
             </td>
           </tr>
@@ -661,7 +693,6 @@ async function refreshStatus() {
       qt.innerHTML = '<tr><td colspan="4" style="color:var(--muted);">Không còn video nào trong hàng chờ.</td></tr>';
     }
 
-    // Render Ledger
     const lt = document.getElementById('ledger-tbody');
     if (data.ledger && data.ledger.length > 0) {
       lt.innerHTML = data.ledger.map(row => `
@@ -681,7 +712,7 @@ async function refreshStatus() {
 }
 
 async function apiPost(url, payload) {
-  document.getElementById('last-msg').textContent = 'Đang thực thi...';
+  document.getElementById('last-msg').textContent = 'Đang thực thi lệnh trên Oppo A57...';
   const r = await fetch(url, {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
@@ -706,7 +737,7 @@ function copyCap(itemId) {
 function connectOppo(ipPort) { apiPost('/api/connect_oppo', {ip_port: ipPort}); }
 function syncR630() { apiPost('/api/sync_r630', {}); }
 function testSwitch(ch) { apiPost('/api/test_switch', {channel: ch}); }
-function prepareOnOppo(itemId) { apiPost('/api/prepare_on_oppo', {item_id: itemId}); }
+function saveDraftOnOppo(itemId) { apiPost('/api/save_draft_on_oppo', {item_id: itemId}); }
 function markPosted(itemId) { apiPost('/api/mark_posted', {item_id: itemId}); }
 function triggerReminderNow() { apiPost('/api/trigger_reminder_now', {}); }
 function toggleScheduler() {
@@ -714,7 +745,7 @@ function toggleScheduler() {
 }
 
 refreshStatus();
-setInterval(refreshStatus, 8000);
+setInterval(refreshStatus, 6000);
 </script>
 </body>
 </html>"""
@@ -725,9 +756,9 @@ if __name__ == "__main__":
     cfg["auto_scheduler_enabled"] = True
     SETTINGS_FILE.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
     print("=" * 72)
-    print(" TIKTOK AUTOHUB - VIETNAMESE CAPTION, 1H REMINDER & MANUAL MARK POSTED")
+    print(" TIKTOK AUTOHUB - AUTO-SAVE-DRAFT (VIETNAMESE) & 1H POST REMINDER")
     print(f" Giao dien Laptop: http://127.0.0.1:{PORT}")
-    print(f" Giao dien Mobile Oppo A57: http://{get_laptop_lan_ip()}:{PORT}/mobile")
+    print(f" Giao dien Mobile Oppo A57 (cung LAN): http://{get_laptop_lan_ip()}:{PORT}/mobile")
     print("=" * 72)
     t = threading.Thread(target=background_scheduler_loop, daemon=True)
     t.start()
