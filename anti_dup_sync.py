@@ -191,7 +191,7 @@ def get_settings() -> dict:
         "auto_scheduler_enabled": True,
         "post_mode": "PREPARE_AND_FILL",
         "active_channels": ["@suckhoeviet.2", "@suc.khoe.vang.268"],
-        "max_offline_cache_videos": 16,
+        "max_offline_cache_videos": 60,
     }
     if SETTINGS_FILE.exists():
         try:

@@ -230,7 +230,7 @@ class LaptopHubHandler(BaseHTTPRequestHandler):
                 "editor": EDITOR_STATUS,
                 "next_wait_seconds": rem_sec,
                 "ledger": ledger,
-                "ready_queue": ready_queue[:24],
+                "ready_queue": ready_queue[:60],
             })
 
         if parsed.path == "/auto_copy":
