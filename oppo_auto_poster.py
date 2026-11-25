@@ -100,14 +100,14 @@ def quick_check_oppo_connected() -> dict:
 
 
 def scan_and_connect_single_ip(target_ip: str) -> dict:
-    """Quet cong 5555 va 30000..49999 tren 1 IP Oppo A57 xac dinh (mat ~1.2 giay) va tu khoa cong 5555."""
+    """Quet cong 5555 va 30000..49999 tren 1 IP Oppo A57 xac dinh va tu khoa cong 5555."""
     target_ip = target_ip.strip().split(":")[0]
     if not target_ip or target_ip == "127.0.0.1":
         return {"connected": False}
 
     def probe_port(p: int):
         try:
-            s = socket.create_connection((target_ip, p), 0.12)
+            s = socket.create_connection((target_ip, p), 0.25)
             s.close()
             return p
         except Exception:
@@ -117,26 +117,25 @@ def scan_and_connect_single_ip(target_ip: str) -> dict:
     if probe_port(5555):
         open_ports.append(5555)
     else:
-        with concurrent.futures.ThreadPoolExecutor(180) as ex:
+        with concurrent.futures.ThreadPoolExecutor(80) as ex:
             open_ports = [p for p in ex.map(probe_port, range(30000, 49999)) if p]
 
     for p in open_ports:
         addr = f"{target_ip}:{p}"
         _, co, _ = run_adb(["connect", addr])
         if "connected to" in co.lower() or "already connected" in co.lower():
-            time.sleep(0.4)
+            time.sleep(0.5)
             _, dout, _ = run_adb(["devices", "-l"])
             if f"{addr}\tdevice" in dout or (f"{addr} " in dout and "offline" not in dout):
                 cfg = get_settings()
                 cfg["oppo_last_ip"] = target_ip
                 SETTINGS_FILE.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
-                # Neu ket noi qua cong ngau nhien 30000-49999, mo luon cong co dinh 5555 de giu ket noi ben vung!
                 if p != 5555:
                     run_adb(["tcpip", "5555"], serial=addr)
                     time.sleep(1.0)
                     run_adb(["connect", f"{target_ip}:5555"])
-                return {"connected": True, "serial": addr, "mode": "WIFI_LAN_AUTO", "detail": f"Đã tự động nối Oppo A57 tại {addr}"}
-    return {"connected": False}
+                return {"connected": True, "serial": addr, "mode": "WIFI_LAN_AUTO", "detail": f"✓ Đã kết nối Oppo A57 thành công tại {addr}"}
+    return {"connected": False, "detail": f"Không tìm thấy cổng Gỡ lỗi không dây mở trên IP {target_ip}. Hãy kiểm tra màn hình Gỡ lỗi không dây trên Oppo A57."}
 
 
 def auto_connect_oppo(hint_ip: str = None) -> dict:
@@ -240,16 +239,30 @@ def auto_connect_oppo(hint_ip: str = None) -> dict:
     return quick_check_oppo_connected()
 
 
-def pair_oppo_wireless(pair_ip_port: str, pair_code: str) -> dict:
-    rc, out, err = run_adb(["pair", pair_ip_port.strip(), pair_code.strip()], timeout=20)
+def pair_oppo_wireless(pair_ip_port: str, pair_code: str, main_ip_port: str = "") -> dict:
+    pair_ip_port = (pair_ip_port or "").strip()
+    pair_code = (pair_code or "").strip()
+    main_ip_port = (main_ip_port or "").strip()
+    if not pair_ip_port or not pair_code:
+        return {"ok": False, "message": "Vui lòng nhập đầy đủ IP:Port ghép nối và Mã 6 số."}
+
+    rc, out, err = run_adb(["pair", pair_ip_port, pair_code], timeout=25)
     combined = f"{out}\n{err}".strip()
     if "successfully paired" in combined.lower():
         ip_only = pair_ip_port.split(":")[0]
         cfg = get_settings()
         cfg["oppo_last_ip"] = ip_only
         SETTINGS_FILE.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
-        conn = auto_connect_oppo(hint_ip=ip_only)
-        return {"ok": True, "message": f"Ghép nối thành công ({combined}). {conn.get('detail', '')}", "connection": conn}
+        if main_ip_port:
+            target_conn = main_ip_port if ":" in main_ip_port else f"{ip_only}:{main_ip_port}"
+            conn = auto_connect_oppo(hint_ip=target_conn)
+        else:
+            conn = scan_and_connect_single_ip(ip_only)
+        return {
+            "ok": True,
+            "message": f"✓ Ghép nối mã 6 số thành công ({combined})! {conn.get('detail', '')}",
+            "connection": conn,
+        }
     return {"ok": False, "message": f"Ghép nối chưa thành công: {combined}"}
 
 

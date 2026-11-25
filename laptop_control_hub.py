@@ -298,7 +298,11 @@ class LaptopHubHandler(BaseHTTPRequestHandler):
             return self._send_json(res)
 
         if parsed.path == "/api/pair_oppo":
-            res = pair_oppo_wireless(body.get("pair_ip_port", ""), body.get("pair_code", ""))
+            res = pair_oppo_wireless(
+                body.get("pair_ip_port", ""),
+                body.get("pair_code", ""),
+                body.get("main_ip_port", ""),
+            )
             RUNTIME_STATE["last_action_time"] = datetime.now().strftime("%H:%M:%S")
             RUNTIME_STATE["last_action_result"] = res.get("message", "")
             return self._send_json(res)
@@ -506,15 +510,43 @@ async function markPosted(itemId) {{
   </div>
 
   <div class="grid">
-    <!-- CARD 1: KET NOI OPPO A57 TREN MANG LAN MOI (KHAC MANG R630) -->
+    <!-- CARD 1: KET NOI & GHEP NOI OPPO A57 TRUC TIEP (DAY DU NUT TU TAY BAM) -->
     <div class="card">
-      <h3>📱 1. Kết Nối Oppo A57 Trên Mạng LAN Hiện Tại (Khác Mạng R630)</h3>
-      <div id="oppo-detail" style="font-size:13px; color:var(--muted); margin-bottom:8px;">Đang kiểm tra...</div>
-      <div class="row">
-        <input id="manual-ip" placeholder="Nhập IP:Port Gỡ lỗi không dây (vd 10.110.8.xx:xxxxx)" style="flex:1; min-width:210px;">
-        <button class="btn btn-yellow" onclick="connectOppo(document.getElementById('manual-ip').value)">🔌 Nối Ngay</button>
+      <h3>📱 1. Hộp Kết Nối & Ghép Nối Oppo A57 (Tự Tay Nhấn Kết Nối)</h3>
+      <div id="oppo-detail" style="font-size:13px; color:var(--muted); margin-bottom:10px;">Đang kiểm tra...</div>
+
+      <!-- NUT 1: TU DONG TIM & NOI -->
+      <div class="row" style="margin-bottom:10px;">
+        <button class="btn btn-yellow" style="width:100%; justify-content:center; padding:11px;" onclick="connectOppo('')">
+          🔌 Tự Động Tìm & Nối Oppo A57 (USB / mDNS / Quét LAN)
+        </button>
       </div>
-      <div id="lan-tip" style="font-size:12px; color:var(--muted); margin-top:10px; line-height:1.55;"></div>
+
+      <!-- HOP A: NOI TRUC TIEP IP:PORT (KHONG CAN MA 6 SO) -->
+      <div style="background:#090d16; border:1px solid var(--border); border-radius:10px; padding:10px 12px; margin-bottom:10px;">
+        <div style="font-size:12px; font-weight:700; color:var(--blue); margin-bottom:6px;">
+          ⚡ Cách A — Nối Trực Tiếp Bằng Địa Chỉ IP:Port (Trên màn hình Gỡ lỗi không dây):
+        </div>
+        <div class="row" style="margin-top:4px;">
+          <input id="manual-ip" placeholder="Nhập IP:Port chính (vd: 10.110.8.99:41235)" style="flex:1; min-width:190px;">
+          <button class="btn btn-green" onclick="connectOppo(document.getElementById('manual-ip').value)">⚡ Kết Nối IP:Port</button>
+        </div>
+      </div>
+
+      <!-- HOP B: GHEP NOI BANG MA 6 SO (GIONG HET HOP TRUOC DE TU TAY NHAN) -->
+      <div style="background:#090d16; border:1px solid #eab308; border-radius:10px; padding:10px 12px;">
+        <div style="font-size:12px; font-weight:700; color:var(--accent); margin-bottom:6px;">
+          🔗 Cách B — Ghép Nối Thiết Bị Bằng Mã 6 Số (Khi đổi mạng mới cần ghép nối lại):
+        </div>
+        <div class="row" style="margin-top:4px;">
+          <input id="pair-ip" placeholder="IP:Port ghép nối (vd: 10.110.8.99:38123)" style="flex:1; min-width:170px;">
+          <input id="pair-code" placeholder="Mã 6 số (vd: 652918)" style="width:140px;">
+        </div>
+        <div class="row" style="margin-top:8px;">
+          <input id="pair-main-port" placeholder="IP:Port chính bên ngoài (tùy chọn, bỏ trống sẽ tự quét)" style="flex:1;">
+          <button class="btn btn-yellow" onclick="pairOppo()">🔗 Ghép Nối & Kết Nối Ngay</button>
+        </div>
+      </div>
     </div>
 
     <!-- CARD 2: BO NHAC LICH DANG & TU DONG LUU NHAP MOI 1 TIENG -->
@@ -611,12 +643,6 @@ async function refreshStatus() {
 
     document.getElementById('last-msg').textContent =
       `[${data.runtime.last_action_time}] ${data.runtime.last_action_result}`;
-
-    document.getElementById('lan-tip').innerHTML =
-      `💡 <b>3 cách kết nối Oppo A57 trên mạng LAN mới (${data.lan_ip}) không cần mã 6 số:</b><br>` +
-      `1) Bật <i>Gỡ lỗi không dây</i> trên Oppo A57 -> Nhập dãy <code>IP:Cổng</code> hiện trên điện thoại vào ô trên rồi bấm <b>Nối Ngay</b>.<br>` +
-      `2) Hoặc <b>cắm cáp USB 3 giây</b> vào Laptop (hệ thống tự bắt IP Wi-Fi mới & mở cổng <code>5555</code> để rút cáp dùng Wi-Fi).<br>` +
-      `3) Hoặc mở <a href="http://${data.lan_ip}:8099/mobile" target="_blank" style="color:var(--accent);font-weight:700;">http://${data.lan_ip}:8099/mobile</a> trên trình duyệt Oppo A57 để Laptop tự bắt IP điện thoại!`;
 
     const badges = [];
     if (oppo.connected) {
@@ -735,6 +761,13 @@ function copyCap(itemId) {
 }
 
 function connectOppo(ipPort) { apiPost('/api/connect_oppo', {ip_port: ipPort}); }
+function pairOppo() {
+  apiPost('/api/pair_oppo', {
+    pair_ip_port: document.getElementById('pair-ip').value,
+    pair_code: document.getElementById('pair-code').value,
+    main_ip_port: document.getElementById('pair-main-port').value
+  });
+}
 function syncR630() { apiPost('/api/sync_r630', {}); }
 function testSwitch(ch) { apiPost('/api/test_switch', {channel: ch}); }
 function saveDraftOnOppo(itemId) { apiPost('/api/save_draft_on_oppo', {item_id: itemId}); }
