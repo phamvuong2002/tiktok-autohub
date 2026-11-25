@@ -81,28 +81,136 @@ PRODUCT_CATALOG = {
         },
     },
     "daday_baotu": {
-        "keywords": ["dạ dày", "bao tử", "ngang ngực", "ợ chua", "trào ngược", "đau rát", "ăn chua"],
-        "product_name": "Hỗn dịch Dạ Dày & Bao Tử (Hỗ trợ giảm đau rát, trào ngược, ợ hơi ợ chua)",
+        "keywords": ["marial", "mi đen", "mang gen", "malaysia", "dạ dày", "bao tử", "ngang ngực", "tức ngực", "ợ chua", "ợ hơi", "trào ngược", "đau rát", "ăn chua", "xé uống liền", "xé ra uống", "viêm xung huyết"],
+        "product_name": "Hỗn dịch dạ dày & trào ngược Marial Gel Ý (Hộp 20 gói uống liền)",
         "seller_id": "7494605437873326000",
-        "seller_name": "Shop Mason & Chăm Sóc Sức Khỏe (GMV Max - isAd: TRUE)",
-        "product_id": "1738159842879505843",
+        "seller_name": "Shop Chăm Sóc Sức Khỏe Chính Hãng (GMV Max - isAd: TRUE)",
+        "product_id": "1738159842879505890",
         "variants": {
             "@suckhoeviet.2": {
-                "cover_lines": ["Hỗ Trợ Dạ Dày & Bao Tử", "Đau rát, ợ hơi, ợ chua", "Ăn xong ngang ngực khó chịu", "Xé uống liền khi đau rát"],
+                "cover_lines": ["Hỗn dịch dạ dày Marial Gel", "Hỗ trợ trào ngược, đau bao tử", "Ăn xong ngang ngực, ợ chua", "Dạng gói xé uống liền tiện lợi"],
                 "caption_seo": (
-                    "Đau rát dạ dày, ăn xong ngang ngực, ợ hơi ợ chua khó chịu vào ban đêm\n"
-                    "Bác Chường hướng dẫn cách xử lý nhanh khi bao tử đau bất chợt sau bữa ăn chua cay hoặc dùng thuốc dài ngày.\n"
-                    "👉 Bấm vào giỏ hàng góc trái màn hình để xem chi tiết & ưu đãi chính hãng!\n"
-                    "#daudaday #traonguocdaday #baotu #suckhoetieuhoa #chamsocsuckhoe"
+                    "Đau rát dạ dày, ăn xong ngang ngực, ợ hơi ợ chua, trào ngược thực quản\n"
+                    "Hỗn dịch dạ dày & trào ngược Marial Gel Ý — Hỗ trợ làm dịu nhanh niêm mạc dạ dày & thực quản, giảm nóng rát khó chịu.\n"
+                    "Cách dùng: Xé uống liền 1 gói sau ăn hoặc khi đau rát\n"
+                    "#marialgel #traonguocdaday #daudaday #baotu #chamsocsuckhoe"
                 ),
             },
             "@suc.khoe.vang.268": {
-                "cover_lines": ["Chăm Sóc Bao Tử Êm Ái", "Giảm tức ngực, trào ngược", "Đau bao tử thất thường", "Hỗ trợ bảo vệ niêm mạc"],
+                "cover_lines": ["Marial Gel — Bảo vệ Bao Tử", "Giảm ợ hơi, ợ chua, nóng rát", "Đau dạ dày ban đêm khó ngủ", "1 gói sau ăn hoặc khi khó chịu"],
                 "caption_seo": (
-                    "Hay đau bao tử thất thường, tức ngực khó ngủ vào buổi tối sau khi ăn\n"
-                    "Chia sẻ từ Bác Chường giúp làm dịu nhanh niêm mạc dạ dày, hỗ trợ tiêu hóa êm ái cho cả gia đình.\n"
-                    "👉 Xem ngay sản phẩm chính hãng tại giỏ hàng màu vàng góc trái video!\n"
-                    "#baotu #daudaday #ohoi #ochua #suckhoegiadinh"
+                    "Hay đau bao tử thất thường vào ban đêm, nóng rát cổ họng do trào ngược\n"
+                    "Hỗn dịch dạ dày & trào ngược Marial Gel Ý — Dạng gói hỗn dịch uống liền giúp bảo vệ niêm mạc bao tử êm ái.\n"
+                    "Cách dùng: Xé uống liền 1 gói sau ăn hoặc khi khó chịu\n"
+                    "#marialgel #baotu #traonguoc #daudaday #suckhoegiadinh"
+                ),
+            },
+        },
+    },
+    "marial_gel": {
+        "keywords": ["marial", "mi đen", "mang gen", "malaysia", "dạ dày", "bao tử", "ngang ngực", "tức ngực", "ợ chua", "ợ hơi", "trào ngược", "đau rát", "ăn chua", "xé uống liền", "xé ra uống", "viêm xung huyết"],
+        "product_name": "Hỗn dịch dạ dày & trào ngược Marial Gel Ý (Hộp 20 gói uống liền)",
+        "seller_id": "7494605437873326000",
+        "seller_name": "Shop Chăm Sóc Sức Khỏe Chính Hãng (GMV Max - isAd: TRUE)",
+        "product_id": "1738159842879505890",
+        "variants": {
+            "@suckhoeviet.2": {
+                "cover_lines": ["Hỗn dịch dạ dày Marial Gel", "Hỗ trợ trào ngược, đau bao tử", "Ăn xong ngang ngực, ợ chua", "Dạng gói xé uống liền tiện lợi"],
+                "caption_seo": (
+                    "Đau rát dạ dày, ăn xong ngang ngực, ợ hơi ợ chua, trào ngược thực quản\n"
+                    "Hỗn dịch dạ dày & trào ngược Marial Gel Ý — Hỗ trợ làm dịu nhanh niêm mạc dạ dày & thực quản, giảm nóng rát khó chịu.\n"
+                    "Cách dùng: Xé uống liền 1 gói sau ăn hoặc khi đau rát\n"
+                    "#marialgel #traonguocdaday #daudaday #baotu #chamsocsuckhoe"
+                ),
+            },
+            "@suc.khoe.vang.268": {
+                "cover_lines": ["Marial Gel — Bảo vệ Bao Tử", "Giảm ợ hơi, ợ chua, nóng rát", "Đau dạ dày ban đêm khó ngủ", "1 gói sau ăn hoặc khi khó chịu"],
+                "caption_seo": (
+                    "Hay đau bao tử thất thường vào ban đêm, nóng rát cổ họng do trào ngược\n"
+                    "Hỗn dịch dạ dày & trào ngược Marial Gel Ý — Dạng gói hỗn dịch uống liền giúp bảo vệ niêm mạc bao tử êm ái.\n"
+                    "Cách dùng: Xé uống liền 1 gói sau ăn hoặc khi khó chịu\n"
+                    "#marialgel #baotu #traonguoc #daudaday #suckhoegiadinh"
+                ),
+            },
+        },
+    },
+    "ginkgo_bonao": {
+        "keywords": ["ginkgo", "ganko", "bổ não", "dưỡng não", "tiền đình", "rối loạn tiền đình", "tuần hoàn não", "hoa mắt", "chóng mặt", "ù tai", "đau đầu"],
+        "product_name": "Viên uống dưỡng não Ginkgo Biloba Mỹ (Hộp 60 viên)",
+        "seller_id": "7494605437873326000",
+        "seller_name": "Shop Mason Natural / Olympian Labs (GMV Max - isAd: TRUE)",
+        "product_id": "1731468745270135099",
+        "variants": {
+            "@suckhoeviet.2": {
+                "cover_lines": ["Dưỡng não Ginkgo Biloba Mỹ", "Hỗ trợ tuần hoàn máu não", "Hoa mắt, chóng mặt, tiền đình", "Ngày uống 1 viên sau ăn"],
+                "caption_seo": (
+                    "Đau đầu, hoa mắt, chóng mặt, ù tai, mất ngủ do thiểu năng tuần hoàn não\n"
+                    "Viên uống dưỡng não Ginkgo Biloba Mỹ — Hỗ trợ tăng cường tuần hoàn máu não, cải thiện rối loạn tiền đình.\n"
+                    "Cách dùng: Ngày uống 1 viên sau ăn\n"
+                    "#ginkgobiloba #duongnao #tuanhoannao #roiloantiendinh #chamsocsuckhoe"
+                ),
+            },
+            "@suc.khoe.vang.268": {
+                "cover_lines": ["Hay đau đầu, mất ngủ, ù tai", "Rối loạn tiền đình, chóng mặt", "Viên uống Dưỡng Não từ Mỹ", "1 viên/ngày, hộp dùng 2 tháng"],
+                "caption_seo": (
+                    "Người lớn tuổi hay chóng mặt quay cuồng, đau nửa đầu, đêm khó ngủ\n"
+                    "Viên uống dưỡng não Ginkgo Biloba Mỹ — Bổ sung Ginkgo Biloba chuẩn Mỹ hỗ trợ máu lưu thông lên não tốt hơn.\n"
+                    "Cách dùng: Ngày uống 1 viên sau ăn\n"
+                    "#bonao #ginkgobiloba #tiendinh #matngu #baovesuckhoe"
+                ),
+            },
+        },
+    },
+    "vitamin_azinc": {
+        "keywords": ["vitamin tổng hợp", "azinc", "adc", "3b", "b1 b6 b12", "dây thần kinh tọa", "thiếu máu", "thiếu sắt", "120 viên", "12 vitamin", "ăn chay"],
+        "product_name": "Vitamin tổng hợp Azinc Arkopharma Pháp (12 Vitamin & 8 Khoáng chất - 120 viên)",
+        "seller_id": "7494727475325798000",
+        "seller_name": "Shop Arkopharma Pháp (GMV Max - isAd: TRUE)",
+        "product_id": "1729632607717722546",
+        "variants": {
+            "@suckhoeviet.2": {
+                "cover_lines": ["Vitamin tổng hợp Azinc Pháp", "12 Vitamin & 8 Khoáng chất", "Mệt mỏi, tê tay chân, ăn chay", "2 viên/ngày sau bữa ăn sáng"],
+                "caption_seo": (
+                    "Thường xuyên mệt mỏi, uể oải, tê mỏi tay chân, ăn chay hoặc mới ốm dậy thiếu vi chất\n"
+                    "Vitamin tổng hợp Azinc Arkopharma Pháp — Bổ sung 12 Vitamin (có 3B B1-B6-B12) & 8 Khoáng chất (Sắt, Kẽm, Canxi) hỗ trợ bồi bổ sức khỏe.\n"
+                    "Cách dùng: Ngày 2 viên buổi sáng sau ăn\n"
+                    "#arkopharma #vitamintonghop #azinc #tangdekhang #chamsocsuckhoe"
+                ),
+            },
+            "@suc.khoe.vang.268": {
+                "cover_lines": ["Bồi bổ cơ thể, giảm mệt mỏi", "Đủ 20 Vitamin & Khoáng chất", "Có nhóm 3B, Sắt, Kẽm từ Pháp", "Ngày uống 2 viên buổi sáng"],
+                "caption_seo": (
+                    "Hay ốm vặt khi đổi mùa, ăn uống kém ngon miệng, cơ thể suy nhược thiếu chất\n"
+                    "Vitamin tổng hợp Azinc Arkopharma Pháp — Hỗ trợ tăng cường sức đề kháng cho người từ 15 tuổi trở lên và người lớn tuổi.\n"
+                    "Cách dùng: Ngày 2 viên buổi sáng sau ăn\n"
+                    "#vitamintonghop #multivitamin #tangcuongsuckhoe #arkopharma #vitamin"
+                ),
+            },
+        },
+    },
+    "biotin_forcapil": {
+        "keywords": ["rụng tóc", "mọc tóc", "biotin", "forcapil", "for cabin", "ford cabin", "dưỡng tóc", "mái tóc", "tóc khô", "gãy rụng"],
+        "product_name": "Viên uống dưỡng tóc Biotin Pháp Arkopharma Forcapil (Hộp 60 viên)",
+        "seller_id": "7494727475325798000",
+        "seller_name": "Shop Arkopharma Pháp (GMV Max - isAd: TRUE)",
+        "product_id": "1729569737652668850",
+        "variants": {
+            "@suckhoeviet.2": {
+                "cover_lines": ["Dưỡng tóc Biotin Pháp", "Tóc yếu hay gãy rụng", "Tóc con mọc chắc khỏe", "Ngày 2 viên buổi sáng"],
+                "caption_seo": (
+                    "Tóc khô xơ, dễ gãy rụng khi gội đầu, rụng tóc nhiều ở phụ nữ sau sinh hoặc tiền mãn kinh\n"
+                    "Viên uống dưỡng tóc Biotin Pháp Arkopharma Forcapil — Bổ sung Biotin, Kẽm & Vitamin nhóm B từ Pháp hỗ trợ tóc chắc khỏe.\n"
+                    "Cách dùng: Ngày 2 viên buổi sáng sau ăn\n"
+                    "#forcapil #rungtocsausinh #rungtoc #arkopharma #biotin"
+                ),
+            },
+            "@suc.khoe.vang.268": {
+                "cover_lines": ["Giảm gãy rụng tóc, mọc tóc", "Tóc mỏng, móng dễ gãy", "Biotin Forcapil từ Pháp", "Ngày 2 viên sau ăn sáng"],
+                "caption_seo": (
+                    "Tóc thưa mỏng, gãy rụng nhiều mỗi khi chải đầu hoặc gội đầu\n"
+                    "Viên uống dưỡng tóc Biotin Pháp Arkopharma Forcapil — Hỗ trợ nuôi dưỡng nang tóc và móng khỏe mạnh từ bên trong.\n"
+                    "Cách dùng: Ngày 2 viên buổi sáng sau ăn\n"
+                    "#duongtoc #biotin #forcapil #arkopharma #rungtoc"
                 ),
             },
         },
@@ -492,3 +600,134 @@ def start_batch_fetch_and_edit(livevault_url: str, max_clips: int = 5, forced_pr
 
     threading.Thread(target=_worker, daemon=True).start()
     return {"ok": True, "message": "Đã bắt đầu thu, cắt & edit loạt video mới trong nền!"}
+
+
+CUSTOM_PRODUCTS_FILE = DATA_DIR / "custom_products.json"
+
+
+def load_custom_products() -> dict:
+    if CUSTOM_PRODUCTS_FILE.exists():
+        try:
+            custom = json.loads(CUSTOM_PRODUCTS_FILE.read_text(encoding="utf-8"))
+            PRODUCT_CATALOG.update(custom)
+        except Exception:
+            pass
+    return PRODUCT_CATALOG
+
+
+def add_custom_product(
+    product_key: str,
+    product_name: str,
+    keywords_csv: str,
+    cover_lines_text: str,
+    caption_seo_text: str,
+    seller_id: str = "7494727475325798000",
+) -> dict:
+    load_custom_products()
+    pkey = re.sub(r"[^a-z0-9_]", "_", product_key.strip().lower()) or f"sp_{int(time.time())}"
+    kws = [k.strip().lower() for k in keywords_csv.split(",") if k.strip()]
+    clines = [ln.strip() for ln in cover_lines_text.splitlines() if ln.strip()][:4]
+    if not clines:
+        clines = [product_name[:24], "Chăm sóc sức khỏe chủ động", "Hàng chính hãng uy tín"]
+
+    entry = {
+        "keywords": kws,
+        "product_name": product_name.strip(),
+        "seller_id": seller_id.strip() or "7494727475325798000",
+        "seller_name": f"Shop GMV Max ({seller_id.strip()})",
+        "product_id": "1738159842879505899",
+        "variants": {
+            "@suckhoeviet.2": {"cover_lines": clines, "caption_seo": caption_seo_text.strip()},
+            "@suc.khoe.vang.268": {"cover_lines": clines, "caption_seo": caption_seo_text.strip()},
+        },
+    }
+    custom = {}
+    if CUSTOM_PRODUCTS_FILE.exists():
+        try:
+            custom = json.loads(CUSTOM_PRODUCTS_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            custom = {}
+    custom[pkey] = entry
+    CUSTOM_PRODUCTS_FILE.write_text(json.dumps(custom, ensure_ascii=False, indent=2), encoding="utf-8")
+    PRODUCT_CATALOG[pkey] = entry
+    return {"ok": True, "product_key": pkey, "message": f"✓ Đã thêm sản phẩm mới '{product_name}' vào từ điển AI nhận diện giọng nói!"}
+
+
+def change_video_item_product(item_id: str, new_product_key: str) -> dict:
+    """
+    Doi san pham cho 1 video bi gan nham tren bang Lich Dang:
+    1. Cap nhat product_name, cover_text, caption_seo, seller_id trong local_queue.json
+    2. Neu file .mp4 da co trong C:\\TikTok_AutoHub\\video_cache\\, tu dong dong lai khung chu Vang chu Den moi de che chu cu 100%!
+    """
+    load_custom_products()
+    if new_product_key not in PRODUCT_CATALOG:
+        return {"ok": False, "message": f"Mã sản phẩm '{new_product_key}' không tồn tại trong danh mục."}
+
+    if not LOCAL_QUEUE_FILE.exists():
+        return {"ok": False, "message": "Không tìm thấy local_queue.json"}
+
+    q = json.loads(LOCAL_QUEUE_FILE.read_text(encoding="utf-8"))
+    target = next((x for x in q if x.get("id") == item_id), None)
+    if not target:
+        return {"ok": False, "message": f"Không tìm thấy video có mã {item_id}"}
+
+    pcat = PRODUCT_CATALOG[new_product_key]
+    ch = target.get("channel", "@suckhoeviet.2")
+    vinfo = pcat["variants"].get(ch) or pcat["variants"]["@suckhoeviet.2"]
+
+    target["product_key"] = new_product_key
+    target["product_name"] = pcat["product_name"]
+    target["seller_id"] = pcat["seller_id"]
+    target["seller_name"] = pcat["seller_name"]
+    target["cover_text"] = "\n".join(vinfo["cover_lines"])
+    target["caption_seo"] = vinfo["caption_seo"]
+    LOCAL_QUEUE_FILE.write_text(json.dumps(q, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # Dong lai khung chu Vang chu Den moi len file .mp4 trong video_cache (de che khung chu cu!)
+    fname = Path(target.get("output_video", "")).name
+    cached_mp4 = CACHE_DIR / fname
+    rerendered_note = ""
+    if cached_mp4.exists() and cached_mp4.stat().st_size > 50000:
+        overlay_png = RAW_TMP_DIR / f"re_pill_{item_id}.png"
+        # Ve hop nen vang che kin vung chu cu (y=680..930) + in 4 dong chu moi
+        W, H = 720, 1280
+        img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        draw = ImageDraw.Draw(img)
+        font_path = r"C:\Windows\Fonts\arialbd.ttf" if Path(r"C:\Windows\Fonts\arialbd.ttf").exists() else r"C:\Windows\Fonts\segoeui.ttf"
+        draw.rounded_rectangle([85, 680, 635, 920], radius=18, fill=(253, 224, 71, 255), outline=(15, 23, 42, 255), width=3)
+        y_cur = 696
+        for idx, ln in enumerate(vinfo["cover_lines"][:4]):
+            fsize = 27 if idx == 0 else 24
+            font = ImageFont.truetype(font_path, fsize)
+            bbox = draw.textbbox((0, 0), ln, font=font)
+            tw = bbox[2] - bbox[0]
+            while tw > 510 and fsize > 17:
+                fsize -= 1
+                font = ImageFont.truetype(font_path, fsize)
+                bbox = draw.textbbox((0, 0), ln, font=font)
+                tw = bbox[2] - bbox[0]
+            draw.text(((W - tw) // 2, y_cur), ln, font=font, fill=(10, 10, 10, 255))
+            y_cur += 52
+        img.save(str(overlay_png), "PNG")
+
+        tmp_out = RAW_TMP_DIR / f"fixed_{fname}"
+        cmd = [
+            FFMPEG_EXE, "-y", "-hide_banner", "-loglevel", "error", "-threads", "2",
+            "-i", str(cached_mp4), "-i", str(overlay_png),
+            "-filter_complex", "[0:v][1:v]overlay=0:0[vout]",
+            "-map", "[vout]", "-map", "0:a",
+            "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-c:a", "copy",
+            str(tmp_out),
+        ]
+        r = subprocess.run(cmd, stdin=subprocess.DEVNULL, capture_output=True, timeout=60)
+        if r.returncode == 0 and tmp_out.exists() and tmp_out.stat().st_size > 50000:
+            tmp_out.replace(cached_mp4)
+            rerendered_note = " & Đã đóng lại khung chữ bìa vàng mới đè lên video .MP4!"
+
+    return {
+        "ok": True,
+        "message": f"✓ Đã đổi sản phẩm của video sang '{pcat['product_name']}', cập nhật Caption Tiếng Việt{rerendered_note}",
+    }
+
+
+load_custom_products()

@@ -49,7 +49,14 @@ from oppo_auto_poster import (
     scan_and_connect_single_ip,
 )
 from home_server_bridge import get_bridge_status, start_cloudflare_login_and_ssh_tunnel
-from local_video_editor import EDITOR_STATUS, start_batch_fetch_and_edit
+from local_video_editor import (
+    EDITOR_STATUS,
+    PRODUCT_CATALOG,
+    add_custom_product,
+    change_video_item_product,
+    load_custom_products,
+    start_batch_fetch_and_edit,
+)
 
 PORT = 8099
 RUNTIME_STATE = {
@@ -374,6 +381,27 @@ class LaptopHubHandler(BaseHTTPRequestHandler):
             max_c = int(body.get("max_clips", 5))
             p_key = body.get("product_key", "AUTO")
             res = start_batch_fetch_and_edit(lv_url, max_clips=max_c, forced_product_key=p_key)
+            RUNTIME_STATE["last_action_time"] = datetime.now().strftime("%H:%M:%S")
+            RUNTIME_STATE["last_action_result"] = res.get("message", "")
+            return self._send_json(res)
+
+        if parsed.path == "/api/change_item_product":
+            iid = body.get("item_id", "")
+            pkey = body.get("product_key", "")
+            res = change_video_item_product(iid, pkey)
+            RUNTIME_STATE["last_action_time"] = datetime.now().strftime("%H:%M:%S")
+            RUNTIME_STATE["last_action_result"] = res.get("message", "")
+            return self._send_json(res)
+
+        if parsed.path == "/api/add_custom_product":
+            res = add_custom_product(
+                product_key=body.get("product_key", ""),
+                product_name=body.get("product_name", ""),
+                keywords_csv=body.get("keywords_csv", ""),
+                cover_lines_text=body.get("cover_lines_text", ""),
+                caption_seo_text=body.get("caption_seo_text", ""),
+                seller_id=body.get("seller_id", "7494727475325798000"),
+            )
             RUNTIME_STATE["last_action_time"] = datetime.now().strftime("%H:%M:%S")
             RUNTIME_STATE["last_action_result"] = res.get("message", "")
             return self._send_json(res)
@@ -746,11 +774,13 @@ async function markPosted(itemId) {{
           <option value="1">Chỉ cắt 1 clip trong link (?clip=...)</option>
         </select>
         <select id="new-lv-prod" style="background:#0b1120;border:1px solid var(--border);color:var(--text);padding:9px;border-radius:8px;font-size:13px;flex:1;">
-          <option value="AUTO">🤖 Tự nhận diện giọng nói Bác Chường (Auto AI)</option>
+          <option value="AUTO">🤖 Tự nhận diện giọng nói Bác Chường (Auto AI - Đã có Marial Gel & Ginkgo)</option>
+          <option value="marial_gel">Hỗn dịch dạ dày & trào ngược Marial Gel Ý (Bao tử)</option>
+          <option value="ginkgo_bonao">Viên uống dưỡng não Ginkgo Biloba Mỹ (Tiền đình)</option>
+          <option value="vitamin_azinc">Vitamin tổng hợp Azinc Pháp (3B, Sắt, Kẽm - 120v)</option>
+          <option value="biotin_forcapil">Viên uống dưỡng tóc Forcapil Pháp (60v)</option>
           <option value="bokhop_chondro">Viên uống Bổ Khớp Chondro-Aid Pháp</option>
-          <option value="daday_baotu">Hỗn dịch Dạ Dày & Bao Tử</option>
           <option value="giaidoc_gan">Viên uống Giải Độc Gan & Hạ Men Gan</option>
-          <option value="matngu_bonao">Viên uống Giấc Ngủ & Tuần Hoàn Não</option>
         </select>
       </div>
       <div class="row" style="margin-top:10px;">
@@ -946,6 +976,20 @@ async function refreshStatus() {
               <b>${item.product_name}</b><br><br>
               <span class="mono">Shop GMV Max ID:<br>${item.seller_id}</span><br>
               <span style="font-size:11px; color:var(--muted);">File: ${fname}</span>
+              <div style="margin-top:8px; padding-top:8px; border-top:1px dashed var(--border);">
+                <div style="font-size:11px; color:#fde047; margin-bottom:4px;">🔄 Đổi đúng Sản phẩm & Render lại bìa vàng:</div>
+                <select id="psel-${item.id}" style="width:100%; font-size:12px; padding:6px; margin-bottom:5px;">
+                  <option value="marial_gel" ${item.product_key==='marial_gel'?'selected':''}>Marial Gel (Bao tử & Trào ngược)</option>
+                  <option value="ginkgo_bonao" ${item.product_key==='ginkgo_bonao'?'selected':''}>Ginkgo Biloba Mỹ (Dưỡng não & Tiền đình)</option>
+                  <option value="vitamin_azinc" ${item.product_key==='vitamin_azinc'?'selected':''}>Vitamin tổng hợp Azinc Pháp (3B, Sắt, Kẽm)</option>
+                  <option value="biotin_forcapil" ${item.product_key==='biotin_forcapil'?'selected':''}>Forcapil Pháp (Dưỡng tóc Biotin)</option>
+                  <option value="bokhop_chondro" ${item.product_key==='bokhop_chondro'?'selected':''}>Bổ Khớp Chondro-Aid Pháp</option>
+                  <option value="giaidoc_gan" ${item.product_key==='giaidoc_gan'?'selected':''}>Giải Độc Gan & Hạ Men Gan</option>
+                </select>
+                <button class="btn btn-dark" style="width:100%; justify-content:center; padding:6px; font-size:12px;" onclick="changeItemProd('${item.id}')">
+                  ✨ Áp Dụng & Đóng Lại Bìa Vàng
+                </button>
+              </div>
             </td>
             <td>
               <div class="cap-card">${item.caption_seo}</div>
@@ -1026,6 +1070,10 @@ function pairOppo() {
 function syncR630() { apiPost('/api/sync_r630', {}); }
 function testSwitch(ch) { apiPost('/api/test_switch', {channel: ch}); }
 function saveDraftOnOppo(itemId) { apiPost('/api/save_draft_on_oppo', {item_id: itemId}); }
+function changeItemProd(itemId) {
+  const sel = document.getElementById('psel-' + itemId);
+  if (sel) apiPost('/api/change_item_product', {item_id: itemId, product_key: sel.value});
+}
 function markPosted(itemId) { apiPost('/api/mark_posted', {item_id: itemId}); }
 function triggerReminderNow() { apiPost('/api/trigger_reminder_now', {}); }
 function masterCtrl(target, action) { apiPost('/api/master_control', {target: target, action: action}); }

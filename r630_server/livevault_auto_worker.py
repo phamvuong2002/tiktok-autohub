@@ -39,14 +39,40 @@ for d in (INPUT_DIR, OUTPUT_DIR, DATA_DIR, OVERLAY_DIR):
 DEFAULT_LIVEVAULT_URL = "http://192.168.1.75:8090/d/LTU1NzUwMjQ0OTE6MTc5ODA4ODA3NDoxMWQxMDU3NGMzM2VjYjNkOWY0OTk4ODM5NDM2ZDJmNTBlMTkzZDg3MDdjZGEzMWI4YzFkMTM4Y2JiZmFkYmZi/"
 FONT_BOLD = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
 
-# Tu khoa nhan dien san pham tu loi thoai Bac Chuong
+# Tu khoa nhan dien san pham tu loi thoai Bac Chuong (bao gom ca tu dong am do Google Speech-to-Text nghe)
 PRODUCT_KEYWORDS = {
-    "canxi_mason": ["canxi", "citrat", "citrate", "tắm nắng", "uống sữa", "loãng xương", "chuột rút", "vọp bẻ", "tụt canxi", "sinh em bé", "mang thai"],
-    "bokhop_chondro": ["bổ khớp", "sụn khớp", "glucosamine", "glucosamin", "khớp gối", "khớp háng", "teo cơ", "lụp cụp", "vịn bàn", "vịn tường", "tràn dịch", "viêm khớp"],
-    "omega3_arko": ["omega", "dầu cá", "mỡ máu", "huyết áp", "tim mạch", "khô mắt", "giác mạc", "trí nhớ", "dha", "epa", "gan nhiễm mỡ"],
-    "vitamin_azinc": ["vitamin tổng hợp", "azinc", "khoáng chất", "đề kháng", "suy nhược", "uể oải", "kén ăn", "ăn chay", "12 loại", "20 loại"],
-    "collagen_chalpha": ["collagen", "ống uống", "sụn", "tầm xuân", "nhập khẩu đức", "dạng nước"],
-    "biotin_forcapil": ["rụng tóc", "mọc tóc", "biotin", "forcapil", "tóc con", "tóc yếu", "gãy rụng", "hói"],
+    "marial_gel": [
+        "marial", "mi đen", "mang gen", "malaysia", "dạ dày", "bao tử", "trào ngược",
+        "ợ chua", "ợ hơi", "ngang ngực", "tức ngực", "xé uống liền", "xé ra uống",
+        "đồ chua", "đồ cay", "viêm xung huyết", "nóng rát cổ họng", "niêm mạc dạ dày", "thuốc giảm đau",
+    ],
+    "ginkgo_bonao": [
+        "ginkgo", "ganko", "bổ não", "dưỡng não", "tiền đình", "rối loạn tiền đình",
+        "tuần hoàn não", "tuần hoàn máu não", "thiểu năng tuần hoàn", "hoa mắt", "chóng mặt",
+        "ù tai", "đau nửa bên đầu", "đỉnh đầu", "60 viên mình uống được 2 tháng",
+    ],
+    "canxi_mason": [
+        "canxi", "green canxi", "canxi rau củ", "citrat", "citrate", "tắm nắng", "uống sữa",
+        "loãng xương", "chuột rút", "vọp bẻ", "tụt canxi", "canxi hữu cơ",
+    ],
+    "bokhop_chondro": [
+        "bổ khớp", "sụn khớp", "glucosamine", "glucosamin", "khớp gối", "khớp háng",
+        "teo cơ", "lụp cụp", "vịn bàn", "vịn tường", "tràn dịch", "viêm khớp",
+    ],
+    "omega3_arko": [
+        "omega", "dầu cá", "mỡ máu", "máu nhiễm mỡ", "huyết áp", "tim mạch",
+        "khô mắt", "giác mạc", "dha", "epa", "gan nhiễm mỡ", "tê châm chích",
+    ],
+    "vitamin_azinc": [
+        "vitamin tổng hợp", "azinc", "adc", "khoáng chất", "đề kháng", "suy nhược",
+        "uể oải", "kén ăn", "ăn chay", "12 vitamin", "8 loại khoáng", "8 khoáng chất",
+        "20 chất", "120 viên", "3b", "b1 b6 b12", "thiếu máu", "thiếu sắt", "dây thần kinh tọa",
+    ],
+    "collagen_chalpha": ["collagen", "ống uống", "tầm xuân", "nhập khẩu đức", "dạng nước", "ch-alpha"],
+    "biotin_forcapil": [
+        "rụng tóc", "mọc tóc", "biotin", "forcapil", "for cabin", "ford cabin",
+        "dưỡng tóc", "mái tóc", "tóc con", "tóc yếu", "tóc khô", "gãy rụng", "hói",
+    ],
 }
 
 # Tu khoa cam o cuoi clip can cat bo ngay (Lazada, Shopee, bao gia tien, khoe man hinh gio hang)
@@ -135,11 +161,8 @@ def analyze_segments(segments: list[dict]) -> dict:
 
     best_product = max(scores, key=scores.get)
     if scores[best_product] == 0:
-        # Neu khong nghe ro tu khoa san pham, kiem tra xem co du loi thoai suc khoe khong
-        total_words = len(full_text.split())
-        if total_words < 20:
-            return {"valid": False, "reason": "Clip quá ít lời thoại hoặc nghỉ giải lao"}
-        best_product = "bokhop_chondro"
+        # Neu khong nghe ro tu khoa san pham cu the, bo qua clip (tranh gan nham sang Xương Khớp!)
+        return {"valid": False, "reason": "Không khớp từ khóa sản phẩm nào trong danh mục (tránh gán nhầm sản phẩm)"}
 
     # 2. Detect forbidden tail (Lazada / Shopee / price at >= 36s)
     body_end = 54.0
