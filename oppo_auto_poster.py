@@ -65,6 +65,47 @@ def get_laptop_lan_ip() -> str:
         return "127.0.0.1"
 
 
+def get_laptop_default_gateway() -> str:
+    """Lay IP Default Gateway cua Wi-Fi Laptop (Khi Laptop bat Hotspot 'OPPO A57', Default Gateway CHINH LA IP cua Oppo A57!)."""
+    try:
+        out = subprocess.run(["ipconfig"], capture_output=True, text=True, timeout=4).stdout
+        # Tim Default Gateway cua Wireless LAN adapter Wi-Fi
+        wifi_part = out.split("Wireless LAN adapter Wi-Fi:")[-1] if "Wireless LAN adapter Wi-Fi:" in out else out
+        m = re.search(r"Default Gateway[\s\.]+:\s*(\d+\.\d+\.\d+\.\d+)", wifi_part)
+        if m:
+            return m.group(1)
+    except Exception:
+        pass
+    return ""
+
+
+def try_auto_join_oppo_a57_hotspot() -> tuple[bool, str]:
+    """
+    Kiem tra xem tren Oppo A57 da bat 'Diem phat song ca nhan' (SSID: 'OPPO A57') chua.
+    Neu thay song 'OPPO A57', Laptop tu dong chuyen sang bat Wi-Fi 'OPPO A57' (da luu san mat khau vuong2002)
+    de vuot qua hoan toan AP Isolation cua Wi-Fi truong DHQG-HCM!
+    """
+    try:
+        iface = subprocess.run(["netsh", "wlan", "show", "interfaces"], capture_output=True, text=True, timeout=4).stdout
+        if "OPPO A57" in iface:
+            gw = get_laptop_default_gateway()
+            return True, gw
+
+        nets = subprocess.run(["netsh", "wlan", "show", "networks"], capture_output=True, text=True, timeout=4).stdout
+        if "OPPO A57" in nets:
+            subprocess.run(["netsh", "wlan", "connect", "name=OPPO A57"], capture_output=True, text=True, timeout=5)
+            time.sleep(4.0)
+            run_adb(["kill-server"])
+            time.sleep(0.5)
+            run_adb(["start-server"])
+            time.sleep(1.5)
+            gw = get_laptop_default_gateway()
+            return True, gw
+    except Exception:
+        pass
+    return False, ""
+
+
 def get_laptop_subnet_prefix() -> str:
     ip = get_laptop_lan_ip()
     parts = ip.split(".")
@@ -85,14 +126,14 @@ def quick_check_oppo_connected() -> dict:
             else:
                 mode = "USB"
             return {"connected": True, "serial": serial, "mode": mode, "detail": ln}
-    lan_ip = get_laptop_lan_ip()
     return {
         "connected": False,
         "serial": None,
         "mode": "NONE",
         "detail": (
-            f"📡 Đã bật sẵn Wi-Fi Nội Bộ trên Laptop: Tên Wi-Fi = 'Vuong' (Mật khẩu: vuong2002). "
-            f"Do Wi-Fi công cộng ({lan_ip}) chặn kết nối giữa các máy (AP Isolation), bạn chỉ cần cho Oppo A57 bắt Wi-Fi 'Vuong' (hoặc cắm cáp USB) là tự động kết nối ngay!"
+            "Do Wi-Fi trường ĐHQG-HCM (10.110.8.x) chặn kết nối giữa các máy và chặn phát lại Hotspot từ Laptop, "
+            "bạn chỉ cần bật 'Điểm phát sóng cá nhân' (OPPO A57) trên điện thoại (hoặc cắm cáp USB) rồi bấm nút vàng 'Tự Động Tìm & Nối Oppo A57': "
+            "Laptop sẽ TỰ ĐỘNG bắt vào sóng 'OPPO A57' và kết nối ngay!"
         ),
     }
 
@@ -196,6 +237,9 @@ def auto_connect_oppo(hint_ip: str = None) -> dict:
             if res.get("connected"):
                 return res
 
+    # Thu tu dong chuyen Laptop sang bat Hotspot 'OPPO A57' cua dien thoai (neu nguoi dung da bat Diem phat song ca nhan tren Oppo A57)
+    joined_oppo_hs, gw_ip = try_auto_join_oppo_a57_hotspot()
+
     # Thu lam moi mDNS tren giao dien mang moi
     _, mdns_out, _ = run_adb(["mdns", "services"])
     if "_adb-tls-connect" in mdns_out:
@@ -203,6 +247,12 @@ def auto_connect_oppo(hint_ip: str = None) -> dict:
         q = quick_check_oppo_connected()
         if q["connected"]:
             return q
+
+    # Neu Laptop dang ket noi vao Hotspot 'OPPO A57', Default Gateway (gw_ip) CHINH LA IP cua Oppo A57!
+    if joined_oppo_hs and gw_ip:
+        res = scan_and_connect_single_ip(gw_ip)
+        if res.get("connected"):
+            return res
 
     # Kiem tra cac thiet bi dang ket noi vao Wi-Fi Hotspot Noi Bo cua Laptop ('Vuong' - dai 192.168.137.x)
     try:
