@@ -342,6 +342,12 @@ class PortalHandler(BaseHTTPRequestHandler):
             if not QUEUE_FILE.exists():
                 generate_batch_for_product("bokhop_chondro")
             self._raw_json(QUEUE_FILE.read_bytes())
+        elif parsed.path == "/api/r630_service_status":
+            st = {}
+            for svc in ("tiktok-worker", "tiktok-portal", "cloudflared-tiktok"):
+                r = subprocess.run(["systemctl", "is-active", f"{svc}.service"], capture_output=True, text=True)
+                st[svc] = (r.stdout.strip() == "active")
+            self._json_resp({"ok": True, "services": st})
         elif parsed.path == "/api/worker_status":
             cfg = load_json(CONFIG_FILE, {})
             proc = load_json(PROCESSED_FILE, {})
@@ -387,6 +393,17 @@ class PortalHandler(BaseHTTPRequestHandler):
                     x["status"] = "POSTED"
             save_json(QUEUE_FILE, q)
             self._json_resp({"ok": True})
+
+        elif parsed.path == "/api/r630_service":
+            act = qs.get("action", ["status"])[0]
+            svc = qs.get("service", ["tiktok-worker"])[0]
+            if svc in ("tiktok-worker", "cloudflared-tiktok") and act in ("start", "stop", "restart"):
+                subprocess.run(["systemctl", act, f"{svc}.service"], check=False)
+            st = {}
+            for sname in ("tiktok-worker", "tiktok-portal", "cloudflared-tiktok"):
+                r = subprocess.run(["systemctl", "is-active", f"{sname}.service"], capture_output=True, text=True)
+                st[sname] = (r.stdout.strip() == "active")
+            self._json_resp({"ok": True, "action": act, "service": svc, "services": st})
 
         elif parsed.path == "/api/adb_pair":
             addr = qs.get("addr", [""])[0]

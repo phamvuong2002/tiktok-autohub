@@ -204,11 +204,20 @@ class LaptopHubHandler(BaseHTTPRequestHandler):
             RUNTIME_STATE["r630_sync_status"]["total_queue"] = len(ready_queue)
 
             rem_sec = max(0, int(RUNTIME_STATE["next_reminder_epoch"] - time.time()))
+            r630_svcs = {"tiktok-worker": True, "tiktok-portal": True, "cloudflared-tiktok": True}
+            try:
+                import urllib.request
+                r630_base = cfg.get("r630_url", "https://tiktok.phamvuong.io.vn").rstrip("/")
+                raw_s = urllib.request.urlopen(f"{r630_base}/api/r630_service_status", timeout=2.5).read().decode("utf-8")
+                r630_svcs = json.loads(raw_s).get("services", r630_svcs)
+            except Exception:
+                pass
             return self._send_json({
                 "settings": cfg,
                 "lan_ip": get_laptop_lan_ip(),
                 "runtime": RUNTIME_STATE,
                 "bridge": get_bridge_status(),
+                "r630_services": r630_svcs,
                 "editor": EDITOR_STATUS,
                 "next_wait_seconds": rem_sec,
                 "ledger": ledger,
@@ -366,6 +375,36 @@ class LaptopHubHandler(BaseHTTPRequestHandler):
             RUNTIME_STATE["last_action_time"] = datetime.now().strftime("%H:%M:%S")
             RUNTIME_STATE["last_action_result"] = res.get("message", "")
             return self._send_json(res)
+
+        if parsed.path == "/api/master_control":
+            target = body.get("target", "")
+            action = body.get("action", "")
+            import subprocess, urllib.request
+            from oppo_auto_poster import run_adb
+            msg = ""
+            if target == "r630_worker":
+                r630_base = get_settings().get("r630_url", "https://tiktok.phamvuong.io.vn").rstrip("/")
+                try:
+                    req = urllib.request.Request(f"{r630_base}/api/r630_service?action={action}&service=tiktok-worker", method="POST")
+                    urllib.request.urlopen(req, timeout=6).read()
+                    msg = f"✓ Đã {'BẬT' if action=='start' else 'TẮT'} Worker Tự Cắt Video 24/7 trên Server Dell R630!"
+                except Exception as e:
+                    msg = f"Lỗi điều khiển Worker R630: {e}"
+            elif target == "adb_server":
+                if action == "stop":
+                    run_adb(["kill-server"])
+                    msg = "⏹️ Đã TẮT dịch vụ ADB Server trên Laptop (Ngắt kết nối Oppo A57)."
+                else:
+                    run_adb(["kill-server"])
+                    run_adb(["start-server"])
+                    msg = "▶️ Đã BẬT lại dịch vụ ADB Server trên Laptop (Sẵn sàng kết nối Oppo A57)."
+            elif target == "laptop_hub" and action == "stop":
+                self._send_json({"ok": True, "message": "🛑 Đang tắt hoàn toàn Trạm Điều Khiển Laptop (Port 8099). Để bật lại, hãy mở file Master-Control-Station.cmd hoặc Start-TikTok-AutoHub.cmd!"})
+                threading.Thread(target=lambda: (time.sleep(0.8), os._exit(0)), daemon=True).start()
+                return
+            RUNTIME_STATE["last_action_time"] = datetime.now().strftime("%H:%M:%S")
+            RUNTIME_STATE["last_action_result"] = msg
+            return self._send_json({"ok": True, "message": msg})
 
         if parsed.path == "/api/update_settings":
             cfg = get_settings()
@@ -525,6 +564,77 @@ async function markPosted(itemId) {{
 
   <div class="log-bar">
     <strong>Trạng thái thực thi:</strong> <span id="last-msg">Đang tải...</span>
+  </div>
+
+  <!-- TRAM KIEM SOAT TONG THE: BAT / TAT BANG TAY TAT CA CHUONG TRINH (SERVER R630 + LAPTOP + OPPO A57) -->
+  <div class="card" style="margin-bottom:18px; border:2px solid #38bdf8; background:linear-gradient(135deg, #0f172a, #131b2e);">
+    <h3>🎛️ Trạm Kiểm Soát Tổng Thể — Bật / Tắt Bằng Tay Tất Cả Chương Trình (Không Cần Nhờ AI)</h3>
+    <div style="font-size:13px; color:var(--muted); margin-bottom:12px;">
+      Bạn có thể chủ động <b>BẬT / TẮT bằng tay</b> từng thành phần trên Server R630 và trên Laptop ngay tại đây (hoặc mở file <code>C:\TikTok_AutoHub\Master-Control-Station.cmd</code> khi muốn bật lại từ đầu):
+    </div>
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(290px, 1fr)); gap:12px; font-size:13px;">
+      <!-- SWITCH 1: SERVER R630 WORKER -->
+      <div style="background:#090d16; padding:12px; border-radius:10px; border:1px solid var(--border);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <b>🖥️ 1. [Server R630] Worker Tự Cắt Video 24/7</b>
+          <span id="sw-r630-badge" class="badge b-ok">ĐANG BẬT</span>
+        </div>
+        <div style="font-size:12px; color:var(--muted); margin-bottom:10px;">
+          Chạy trên Container 240 (<code>192.168.1.240</code> / <code>tiktok.phamvuong.io.vn</code>): Tự quét LiveVault & render video mới.
+        </div>
+        <div class="row">
+          <button class="btn btn-green" onclick="masterCtrl('r630_worker','start')">▶️ Bật Worker R630</button>
+          <button class="btn btn-dark" onclick="masterCtrl('r630_worker','stop')">⏹️ Tắt Worker R630</button>
+          <a class="btn btn-blue" href="https://tiktok.phamvuong.io.vn" target="_blank">🌐 Mở Web R630</a>
+        </div>
+      </div>
+
+      <!-- SWITCH 2: LAPTOP 1H SCHEDULER -->
+      <div style="background:#090d16; padding:12px; border-radius:10px; border:1px solid var(--border);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <b>💻 2. [Laptop] Bộ Nhắc Lịch & Lưu Nháp 1 Tiếng</b>
+          <span id="sw-sched-badge" class="badge b-ok">ĐANG BẬT</span>
+        </div>
+        <div style="font-size:12px; color:var(--muted); margin-bottom:10px;">
+          Đếm ngược mỗi 60 phút để tự đẩy video sang Nháp Oppo A57 & bật chuông nhắc bạn chọn sản phẩm.
+        </div>
+        <div class="row">
+          <button class="btn btn-green" onclick="apiPost('/api/update_settings',{auto_scheduler_enabled:true})">▶️ Bật Hẹn Giờ 1h</button>
+          <button class="btn btn-dark" onclick="apiPost('/api/update_settings',{auto_scheduler_enabled:false})">⏹️ Tắt Hẹn Giờ 1h</button>
+        </div>
+      </div>
+
+      <!-- SWITCH 3: OPPO A57 ADB SERVICE -->
+      <div style="background:#090d16; padding:12px; border-radius:10px; border:1px solid var(--border);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <b>📱 3. [Oppo A57] Dịch Vụ Cổng Kết Nối ADB</b>
+          <span id="sw-adb-badge" class="badge b-warn">KIỂM TRA</span>
+        </div>
+        <div style="font-size:12px; color:var(--muted); margin-bottom:10px;">
+          Cầu nối điều khiển điện thoại Oppo A57 (chuyển 4 tài khoản, đẩy video, dán Caption Tiếng Việt & bấm Nháp).
+        </div>
+        <div class="row">
+          <button class="btn btn-green" onclick="masterCtrl('adb_server','start')">▶️ Khởi Động Lại ADB</button>
+          <button class="btn btn-dark" onclick="masterCtrl('adb_server','stop')">⏹️ Ngắt & Tắt ADB</button>
+        </div>
+      </div>
+
+      <!-- SWITCH 4: SHUTDOWN LAPTOP HUB -->
+      <div style="background:#090d16; padding:12px; border-radius:10px; border:1px solid var(--border);">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <b>🛑 4. [Laptop] Trạm Điều Khiển Chính (Port 8099)</b>
+          <span class="badge b-ok">ĐANG CHẠY</span>
+        </div>
+        <div style="font-size:12px; color:var(--muted); margin-bottom:10px;">
+          Khi nghỉ làm việc, bấm nút dưới để tắt hẳn chương trình chạy ngầm trên Laptop (Mở lại bằng <code>Start-TikTok-AutoHub.cmd</code>).
+        </div>
+        <div class="row">
+          <button class="btn" style="background:#ef4444;color:#fff;width:100%;justify-content:center;" onclick="if(confirm('Bạn muốn tắt hẳn Trạm Điều Khiển trên Laptop (Port 8099)? Khi cần bật lại, chỉ cần mở file Start-TikTok-AutoHub.cmd!')) masterCtrl('laptop_hub','stop')">
+            🛑 Tắt Hẳn Chương Trình Trên Laptop
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- HOP HUONG DAN 3 BUOC TRUC QUAN TREN GIAO DIEN & CO CHE CHONG TRUNG 4 LOP -->
@@ -761,6 +871,25 @@ async function refreshStatus() {
     document.getElementById('cache-detail').innerHTML =
       `Đang dùng Kho Video Offline trên Laptop (<code>C:\\TikTok_AutoHub\\video_cache</code>): <b>${r630.cached_offline_ready || 0}</b> video đã tải sẵn (Hoạt động độc lập không cần R630).`;
 
+    if (data.r630_services) {
+      const wOn = data.r630_services['tiktok-worker'];
+      const rBadge = document.getElementById('sw-r630-badge');
+      if (rBadge) {
+        rBadge.textContent = wOn ? '🟢 ĐANG BẬT' : '🔴 ĐANG TẮT';
+        rBadge.className = wOn ? 'badge b-ok' : 'badge b-warn';
+      }
+    }
+    const sBadge = document.getElementById('sw-sched-badge');
+    if (sBadge) {
+      sBadge.textContent = currentSettings.auto_scheduler_enabled ? '🟢 ĐANG BẬT' : '🔴 ĐANG TẮT';
+      sBadge.className = currentSettings.auto_scheduler_enabled ? 'badge b-ok' : 'badge b-warn';
+    }
+    const aBadge = document.getElementById('sw-adb-badge');
+    if (aBadge) {
+      aBadge.textContent = oppo.connected ? '🟢 ĐÃ KẾT NỐI' : '⚪ CHỜ KẾT NỐI';
+      aBadge.className = oppo.connected ? 'badge b-ok' : 'badge b-warn';
+    }
+
     if (data.editor) {
       const edBox = document.getElementById('editor-status-box');
       if (edBox) {
@@ -898,6 +1027,7 @@ function testSwitch(ch) { apiPost('/api/test_switch', {channel: ch}); }
 function saveDraftOnOppo(itemId) { apiPost('/api/save_draft_on_oppo', {item_id: itemId}); }
 function markPosted(itemId) { apiPost('/api/mark_posted', {item_id: itemId}); }
 function triggerReminderNow() { apiPost('/api/trigger_reminder_now', {}); }
+function masterCtrl(target, action) { apiPost('/api/master_control', {target: target, action: action}); }
 function startRemoteBridge(wanIpPort) { apiPost('/api/start_remote_bridge', {wan_ip_port: wanIpPort || ''}); }
 function startFetchEditNewLink() {
   apiPost('/api/fetch_edit_new_link', {
