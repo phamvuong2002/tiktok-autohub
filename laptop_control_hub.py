@@ -97,7 +97,7 @@ def get_ready_queue_with_1h_schedule() -> list[dict]:
     for idx, item in enumerate(interleaved):
         slot_dt = base_time + timedelta(hours=idx)
         item["scheduled_1h_slot"] = (
-            "Ngay bây giờ (Khung giờ hiện tại)" if idx == 0 else slot_dt.strftime("%H:%M · %d/%m/%Y (Cách %dh)" % idx)
+            "Ngay bây giờ (Khung giờ hiện tại)" if idx == 0 else f"{slot_dt.strftime('%H:%M · %d/%m/%Y')} (Cách {idx}h)"
         )
         fname = Path(item.get("output_video", "")).name
         item["cached_offline"] = (CACHE_DIR / fname).exists()
