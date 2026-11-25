@@ -15,9 +15,12 @@ Hoan thien theo dung yeu cau cua nguoi dung (khi Laptop + Oppo A57 di ra ngoai c
 """
 import ctypes
 import json
+import os
+import subprocess
 import threading
 import time
 import urllib.parse
+import urllib.request
 from datetime import datetime, timedelta
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -206,7 +209,6 @@ class LaptopHubHandler(BaseHTTPRequestHandler):
             rem_sec = max(0, int(RUNTIME_STATE["next_reminder_epoch"] - time.time()))
             r630_svcs = {"tiktok-worker": True, "tiktok-portal": True, "cloudflared-tiktok": True}
             try:
-                import urllib.request
                 r630_base = cfg.get("r630_url", "https://tiktok.phamvuong.io.vn").rstrip("/")
                 raw_s = urllib.request.urlopen(f"{r630_base}/api/r630_service_status", timeout=2.5).read().decode("utf-8")
                 r630_svcs = json.loads(raw_s).get("services", r630_svcs)
@@ -379,7 +381,6 @@ class LaptopHubHandler(BaseHTTPRequestHandler):
         if parsed.path == "/api/master_control":
             target = body.get("target", "")
             action = body.get("action", "")
-            import subprocess, urllib.request
             from oppo_auto_poster import run_adb
             msg = ""
             if target == "r630_worker":
