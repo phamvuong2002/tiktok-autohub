@@ -250,20 +250,24 @@ def auto_connect_oppo(hint_ip: str = None) -> dict:
 
 
 def ensure_laptop_hotspot_on() -> dict:
-    """Tu dong bat Diem phat song di dong (Windows Mobile Hotspot: SSID 'Vuong') tren Laptop de vuot qua AP Isolation cua Wi-Fi cong cong."""
+    """Tu dong bat Diem phat song di dong (Windows Mobile Hotspot: SSID 'Vuong') va khoi dong lai SharedAccess DHCP (192.168.137.1)."""
     ps_script = (
         "Add-Type -AssemblyName System.Runtime.WindowsRuntime; "
-        "$asTaskGeneric = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' })[0]; "
-        "Function Await($WinRtTask, $ResultType) { $asTask = $asTaskGeneric.MakeGenericMethod($ResultType); $netTask = $asTask.Invoke($null, @($WinRtTask)); $netTask.Wait(-1) | Out-Null; $netTask.Result }; "
         "$cp = [Windows.Networking.Connectivity.NetworkInformation,Windows.Networking.Connectivity,ContentType=WindowsRuntime]::GetInternetConnectionProfile(); "
         "if ($cp -ne $null) { "
         "$tm = [Windows.Networking.NetworkOperators.NetworkOperatorTetheringManager,Windows.Networking.NetworkOperators,ContentType=WindowsRuntime]::CreateFromConnectionProfile($cp); "
         "$cfg = $tm.GetCurrentAccessPointConfiguration(); "
-        "if ($tm.TetheringOperationalState -ne 'On') { $null = Await ($tm.StartTetheringAsync()) ([Windows.Networking.NetworkOperators.NetworkOperatorTetheringOperationResult]) }; "
+        "if ($tm.TetheringOperationalState -ne 'On') { "
+        "$null = $tm.StartTetheringAsync(); Start-Sleep -Seconds 3; "
+        "Restart-Service SharedAccess -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 1 "
+        "} else { "
+        "$ip = (Get-NetIPAddress -InterfaceAlias 'Local Area Connection* *' -AddressFamily IPv4 -ErrorAction SilentlyContinue).IPAddress; "
+        "if (-not $ip) { Restart-Service SharedAccess -Force -ErrorAction SilentlyContinue; Start-Sleep -Seconds 1 } "
+        "}; "
         "Write-Output ($cfg.Ssid + '|' + $cfg.Passphrase + '|' + $tm.TetheringOperationalState) }"
     )
     try:
-        r = subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], capture_output=True, text=True, timeout=10)
+        r = subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], capture_output=True, text=True, timeout=12)
         parts = r.stdout.strip().split("|")
         if len(parts) >= 2:
             return {"ok": True, "ssid": parts[0], "password": parts[1], "state": parts[2] if len(parts) > 2 else "On"}
