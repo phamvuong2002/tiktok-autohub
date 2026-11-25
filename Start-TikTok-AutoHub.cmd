@@ -8,6 +8,7 @@ echo   - Tu dong ket noi Oppo A57 (USB / Wi-Fi / Hotspot khi di ra ngoai)
 echo   - Chong dang trung 3 lop (SHA-256) & Dang gian cach 1 Tieng / 1 Video
 echo ======================================================================
 cd /d C:\TikTok_AutoHub
+set ADB_LIBUSB=0
 start "" "http://127.0.0.1:8099"
 python -u C:\TikTok_AutoHub\laptop_control_hub.py
 pause

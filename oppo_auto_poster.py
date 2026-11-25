@@ -16,6 +16,7 @@ Hoan thien theo dung yeu cau cua nguoi dung khi mang Laptop + Oppo A57 ra ngoai 
 """
 import concurrent.futures
 import json
+import os
 import re
 import socket
 import subprocess
@@ -23,6 +24,8 @@ import time
 import urllib.parse
 import xml.etree.ElementTree as ET
 from pathlib import Path
+
+os.environ["ADB_LIBUSB"] = "0"
 
 from anti_dup_sync import (
     ALLOWED_CHANNELS,
