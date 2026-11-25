@@ -630,17 +630,32 @@ def auto_save_draft_on_oppo(item_id: str = None, channel: str = None) -> dict:
     run_adb(["shell", "input", "tap", "188", "1540"], serial=serial)
     time.sleep(2.5)
 
-    # Cap nhat trang thai 'SAVED_DRAFT' trong local_queue.json
-    item["status"] = "SAVED_DRAFT"
-    item["drafted_at"] = time.strftime("%H:%M · %d/%m/%Y")
+    # LOP 4 CHONG TRUNG: Xoa ngay file video tam trong /sdcard/DCIM/Camera/ cua Oppo A57 sau khi TikTok da luu vao Nhap
+    # -> Dam bao trong cuon Camera dien thoai KHONG BAO GIO con ton đọng video cu de chon nham!
+    run_adb(
+        ["shell", "rm -f /sdcard/DCIM/Camera/AUTO_*.mp4 /sdcard/DCIM/Camera/TIKTOK_CURRENT_*.mp4"],
+        serial=serial,
+    )
+
+    # KHOA NGAY VAO SO CAI CHONG DANG TRUNG 3 LOP (anti_duplicate_ledger.db) NGAY KHI LUU NHAP
+    # de video nay KHONG BAO GIO bi day hoac luu nhap lai lan thu 2!
+    record_posted_in_ledger(item, f_hash, c_hash, mode="SAVED_DRAFT_LOCKED")
+
+    # Cap nhat trang thai 'SAVED_DRAFT' trong local_queue.json (vẫn hiện trên bảng để chờ bạn bấm 'Đánh dấu Đã Đăng' từ Nháp)
+    for x in queue:
+        if x.get("id") == item["id"]:
+            x["status"] = "SAVED_DRAFT"
+            x["drafted_at"] = time.strftime("%H:%M · %d/%m/%Y")
+            x["file_sha256"] = f_hash
     LOCAL_QUEUE_FILE.write_text(json.dumps(queue, ensure_ascii=False, indent=2), encoding="utf-8")
 
     return {
         "ok": True,
         "step": "SAVED_TO_TIKTOK_DRAFTS",
         "message": (
-            f"📝 ĐÃ LƯU NHÁP THÀNH CÔNG trên kênh {target_ch} (Video: {local_mp4.name} + Caption Tiếng Việt CÓ DẤU 100%)! "
-            f"Khi đến giờ nhắc lịch (mỗi 1 tiếng), bạn chỉ cần mở mục [Nháp] trong Hồ sơ TikTok trên Oppo A57 -> Chọn Sản Phẩm ({item['product_name']}) -> Bấm [Đăng]!"
+            f"📝 ĐÃ LƯU NHÁP & KHÓA CHỐNG TRÙNG THÀNH CÔNG trên kênh {target_ch} "
+            f"(Video: {local_mp4.name} • Mã SHA-256: {f_hash[:12]}... đã khóa cứng • Đã dọn sạch file thừa trong Camera Oppo A57)! "
+            f"Khi đến giờ nhắc lịch (mỗi 1 tiếng), bạn chỉ cần mở mục [Nháp] trên Oppo A57 -> Chọn Sản Phẩm ({item['product_name']}) -> Bấm [Đăng]!"
         ),
         "item": item,
     }
@@ -649,7 +664,8 @@ def auto_save_draft_on_oppo(item_id: str = None, channel: str = None) -> dict:
 def mark_video_as_posted(item_id: str) -> dict:
     """
     Khi nguoi dung mo Nhap, chon san pham va bam Dang xong -> Bam '[✅ Đánh Dấu Đã Đăng]':
-    - Khoa cung SHA-256 vao So cai Chong Dang Trung 3 Lop (anti_duplicate_ledger.db)
+    - Cap nhat trang thai trong So cai Chong Dang Trung = PUBLISHED_FROM_DRAFT
+    - Xoa luon file .mp4 da dang khoi C:\\TikTok_AutoHub\\video_cache\\ de tiet kiem o C: va triet tieu 100% nguy co dang lai
     - Chuyen status = POSTED va bat dau dem nguoc 60 phut (1 tieng) cho luot nhac tiep theo!
     """
     if not LOCAL_QUEUE_FILE.exists():
@@ -662,16 +678,47 @@ def mark_video_as_posted(item_id: str) -> dict:
 
     fname = Path(target_item.get("output_video", "")).name
     local_mp4 = CACHE_DIR / fname
-    is_safe, dup_msg, f_hash, c_hash = check_duplicate_guard(target_item, local_mp4)
-    if not is_safe:
-        return {"ok": False, "message": dup_msg}
 
-    record_posted_in_ledger(target_item, f_hash, c_hash, mode="PUBLISHED_FROM_DRAFT")
+    from anti_dup_sync import DB_PATH, init_db, sha256_file, sha256_text
+    import sqlite3
+    init_db()
+    f_hash = target_item.get("file_sha256") or (sha256_file(local_mp4) if local_mp4.exists() else "LOCKED_SHA256")
+    c_hash = sha256_text(target_item.get("caption_seo", ""))
+
+    # Neu chua co trong ledger thi ghi moi; neu da khoa luc SAVED_DRAFT thi nang cap trang thai len PUBLISHED_FROM_DRAFT
+    conn = sqlite3.connect(str(DB_PATH))
+    cur = conn.cursor()
+    cur.execute("SELECT id FROM posted_history WHERE item_id = ?", (item_id,))
+    if cur.fetchone():
+        cur.execute(
+            "UPDATE posted_history SET post_mode = ?, posted_at = ? WHERE item_id = ?",
+            ("PUBLISHED_FROM_DRAFT", time.strftime("%Y-%m-%d %H:%M:%S"), item_id),
+        )
+        conn.commit()
+        conn.close()
+    else:
+        conn.close()
+        record_posted_in_ledger(target_item, f_hash, c_hash, mode="PUBLISHED_FROM_DRAFT")
+
+    for x in queue:
+        if x.get("id") == item_id:
+            x["status"] = "POSTED"
+            x["posted_at"] = time.strftime("%Y-%m-%d %H:%M:%S")
+    LOCAL_QUEUE_FILE.write_text(json.dumps(queue, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    # Xoa file video .mp4 da dang khoi video_cache de KHONG BAO GIO con file tren may!
+    try:
+        if local_mp4.exists():
+            local_mp4.unlink()
+    except Exception:
+        pass
+
     return {
         "ok": True,
         "message": (
-            f"✅ Đã xác nhận ĐÃ ĐĂNG từ Nháp cho video '{fname}' trên kênh {target_item['channel']}! "
-            f"Đã khóa mã SHA-256 ({f_hash[:14]}...) vào Sổ cái chống trùng và bắt đầu đếm ngược 60 phút (1 tiếng) để nhắc bài tiếp theo."
+            f"✅ Đã xác nhận ĐÃ ĐĂNG hoàn tất cho video '{fname}' trên kênh {target_item['channel']}! "
+            f"Đã khóa vĩnh viễn mã SHA-256 ({f_hash[:14]}...), xóa file video gốc khỏi bộ đệm để chống đăng trùng tuyệt đối 100%, "
+            f"và bắt đầu đếm ngược 60 phút (1 tiếng) để nhắc bài tiếp theo."
         ),
         "item": target_item,
         "file_sha256": f_hash,

@@ -213,8 +213,10 @@ def sync_from_r630_to_laptop_cache() -> dict:
     init_db()
     conn = sqlite3.connect(str(DB_PATH))
     cur = conn.cursor()
-    cur.execute("SELECT item_id FROM posted_history")
-    already_posted_ids = {r[0] for r in cur.fetchall()}
+    cur.execute("SELECT item_id, clip_id, channel FROM posted_history")
+    rows = cur.fetchall()
+    already_posted_ids = {r[0] for r in rows}
+    already_posted_clip_ch = {(r[1], r[2]) for r in rows}
     conn.close()
 
     r630_reachable = False
@@ -240,10 +242,14 @@ def sync_from_r630_to_laptop_cache() -> dict:
             if item.get("channel") not in ALLOWED_CHANNELS:
                 continue
             iid = item["id"]
-            if iid in already_posted_ids:
+            cid = item.get("clip_id") or iid.split("_")[1]
+            ch = item.get("channel", "")
+            if iid in already_posted_ids or (cid, ch) in already_posted_clip_ch:
                 item["status"] = "POSTED"
-            elif iid in by_id and by_id[iid].get("status") == "POSTED":
-                item["status"] = "POSTED"
+            elif iid in by_id and by_id[iid].get("status") in ("POSTED", "SAVED_DRAFT"):
+                item["status"] = by_id[iid].get("status")
+                if "drafted_at" in by_id[iid]:
+                    item["drafted_at"] = by_id[iid]["drafted_at"]
             merged.append(item)
         local_queue = merged
 

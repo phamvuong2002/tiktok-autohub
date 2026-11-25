@@ -507,6 +507,28 @@ async function markPosted(itemId) {{
     <strong>Trạng thái thực thi:</strong> <span id="last-msg">Đang tải...</span>
   </div>
 
+  <!-- HOP HUONG DAN 3 BUOC TRUC QUAN TREN GIAO DIEN & CO CHE CHONG TRUNG 4 LOP -->
+  <div class="card" style="margin-bottom:18px; border:1px solid #eab308; background:linear-gradient(135deg, #161f33, #0f172a);">
+    <h3>📖 Hướng Dẫn Sử Dụng Trực Tiếp Trên Giao Diện Này (3 Bước Chuẩn & Chống Đăng Trùng Tuyệt Đối 4 Lớp)</h3>
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:14px; font-size:13px; line-height:1.55;">
+      <div style="background:#090d16; padding:12px; border-radius:10px; border-left:4px solid #38bdf8;">
+        <b style="color:#38bdf8;">BƯỚC 1 — Kết nối Oppo A57 (Ô số 1 bên dưới):</b><br>
+        • Khi đi ra ngoài (khác mạng R630), bạn chỉ cần <b>cắm dây cáp USB</b> từ Oppo A57 vào Laptop (hoặc bật <i>Điểm phát sóng cá nhân</i> trên Oppo A57) rồi bấm nút vàng <b>[🔌 Tự Động Tìm & Nối Oppo A57]</b>.<br>
+        • Nhìn góc phải trên cùng hiện nhãn xanh <b>📱 Oppo A57: ĐÃ KẾT NỐI</b> là sẵn sàng.
+      </div>
+      <div style="background:#090d16; padding:12px; border-radius:10px; border-left:4px solid #fde047;">
+        <b style="color:#fde047;">BƯỚC 2 — Tự Động Lưu Nháp Kèm Caption Tiếng Việt:</b><br>
+        • Ở bảng <b>Danh Sách Video Lên Lịch</b> bên dưới, bấm nút vàng <b>[📝 1. Tự Động Đẩy Video + Dán Tiếng Việt & Lưu Nháp]</b> ở bài đầu tiên (hoặc để hệ thống tự chạy mỗi 60 phút).<br>
+        • Hệ thống sẽ tự kiểm tra chống trùng, chuyển đúng kênh (<code>@suckhoeviet.2</code> / <code>@suc.khoe.vang.268</code>), đẩy duy nhất 1 video sang máy, dán <b>Caption Tiếng Việt có dấu 100%</b> và bấm <b>Lưu Nháp</b> trên TikTok!
+      </div>
+      <div style="background:#090d16; padding:12px; border-radius:10px; border-left:4px solid #22c55e;">
+        <b style="color:#4ade80;">BƯỚC 3 — Chọn Sản Phẩm Từ Nháp & Đánh Dấu Đã Đăng:</b><br>
+        • Khi Laptop đổ chuông & hiện bảng nhắc (mỗi 1 tiếng), bạn mở mục <b>[Nháp]</b> trong Hồ sơ TikTok trên Oppo A57 -> Chọn <b>Thêm liên kết (Sản phẩm GMV Max)</b> -> Bấm <b>[Đăng]</b>.<br>
+        • Đăng xong, bạn bấm ngay nút xanh <b>[✅ 2. Đánh Dấu Đã Đăng Từ Nháp]</b> trên bảng dưới để <b>xóa vĩnh viễn file video đã đăng</b>, khóa mã <code>SHA-256</code> và bắt đầu đếm ngược 60 phút cho bài kế tiếp!
+      </div>
+    </div>
+  </div>
+
   <div class="grid">
     <!-- CARD 1: KET NOI & GHEP NOI OPPO A57 TRUC TIEP (DAY DU NUT TU TAY BAM) -->
     <div class="card">
@@ -699,11 +721,15 @@ async function refreshStatus() {
             </td>
             <td>
               <div style="display:flex; flex-direction:column; gap:8px;">
-                <button class="btn btn-yellow" onclick="saveDraftOnOppo('${item.id}')">
-                  📝 1. Tự Động Đẩy Video + Dán Tiếng Việt & Lưu Nháp
-                </button>
+                ${isDrafted
+                  ? `<button class="btn btn-dark" disabled style="opacity:0.65; cursor:not-allowed; border:1px solid #eab308; color:#fde047;">
+                       🔒 Đã Khóa Nạp Lại (Đã Lưu Nháp - Chống Trùng 100%)
+                     </button>`
+                  : `<button class="btn btn-yellow" onclick="saveDraftOnOppo('${item.id}')">
+                       📝 1. Tự Động Đẩy Video + Dán Tiếng Việt & Lưu Nháp
+                     </button>`}
                 <button class="btn btn-green" onclick="markPosted('${item.id}')">
-                  ✅ 2. Đánh Dấu Đã Đăng Từ Nháp (Hẹn Nhắc 1 Tiếng)
+                  ✅ 2. Đánh Dấu Đã Đăng Từ Nháp (Khóa & Xóa Video Gốc)
                 </button>
                 <button class="btn btn-blue" id="cpbtn-${item.id}" onclick="copyCap('${item.id}')">
                   📋 Copy Caption Tiếng Việt Có Dấu
