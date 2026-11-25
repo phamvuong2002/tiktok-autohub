@@ -45,6 +45,8 @@ from oppo_auto_poster import (
     quick_check_oppo_connected,
     scan_and_connect_single_ip,
 )
+from home_server_bridge import get_bridge_status, start_cloudflare_login_and_ssh_tunnel
+from local_video_editor import EDITOR_STATUS, start_batch_fetch_and_edit
 
 PORT = 8099
 RUNTIME_STATE = {
@@ -206,6 +208,8 @@ class LaptopHubHandler(BaseHTTPRequestHandler):
                 "settings": cfg,
                 "lan_ip": get_laptop_lan_ip(),
                 "runtime": RUNTIME_STATE,
+                "bridge": get_bridge_status(),
+                "editor": EDITOR_STATUS,
                 "next_wait_seconds": rem_sec,
                 "ledger": ledger,
                 "ready_queue": ready_queue[:24],
@@ -345,6 +349,22 @@ class LaptopHubHandler(BaseHTTPRequestHandler):
 
         if parsed.path == "/api/trigger_reminder_now":
             res = trigger_1hour_draft_and_reminder()
+            return self._send_json(res)
+
+        if parsed.path == "/api/start_remote_bridge":
+            custom_wan = body.get("wan_ip_port", "")
+            res = start_cloudflare_login_and_ssh_tunnel(custom_wan)
+            RUNTIME_STATE["last_action_time"] = datetime.now().strftime("%H:%M:%S")
+            RUNTIME_STATE["last_action_result"] = res.get("last_bridge_msg", "")
+            return self._send_json(res)
+
+        if parsed.path == "/api/fetch_edit_new_link":
+            lv_url = body.get("livevault_url", "")
+            max_c = int(body.get("max_clips", 5))
+            p_key = body.get("product_key", "AUTO")
+            res = start_batch_fetch_and_edit(lv_url, max_clips=max_c, forced_product_key=p_key)
+            RUNTIME_STATE["last_action_time"] = datetime.now().strftime("%H:%M:%S")
+            RUNTIME_STATE["last_action_result"] = res.get("message", "")
             return self._send_json(res)
 
         if parsed.path == "/api/update_settings":
@@ -596,6 +616,66 @@ async function markPosted(itemId) {{
     </div>
   </div>
 
+  <!-- HANG 2: HOP THU & EDIT LOAT VIDEO MOI TU LINK LIVEVAULT + HOP KET NOI SERVER NHA TU XA (PORT 4898 / TUNNEL) -->
+  <div class="grid">
+    <!-- CARD 4: THU & EDIT TU DONG LOAT VIDEO MOI TU LINK LIVEVAULT MOI -->
+    <div class="card" style="border:1px solid #38bdf8;">
+      <h3>🎬 4. Thu, Cắt & Edit Tự Động Loạt Video Mới (Từ Link LiveVault Mới)</h3>
+      <div style="font-size:13px; color:var(--muted); margin-bottom:8px;">
+        Dán đường link thu video mới (ví dụ: <code>http://192.168.1.75:8090/d/...</code> hoặc <code>http://127.0.0.1:8090/d/...</code>). Hệ thống sẽ tự tải clip mới, lọc trùng 4 lớp, cắt bỏ đoạn cuối vi phạm, đảo Hook 3.5s, đóng khung chữ Vàng chữ Đen, viết Caption Tiếng Việt có dấu + 5 Hashtag và đưa lên <b>ĐẦU bảng lịch đăng 1 tiếng</b>:
+      </div>
+      <div class="row">
+        <input id="new-lv-url" placeholder="Dán link thu video LiveVault mới vào đây (http://...:8090/d/...)" style="flex:1; min-width:260px;">
+      </div>
+      <div class="row">
+        <select id="new-lv-count" style="background:#0b1120;border:1px solid var(--border);color:var(--text);padding:9px;border-radius:8px;font-size:13px;">
+          <option value="3">Cắt 3 clip mới nhất (= 6 video cho 2 kênh)</option>
+          <option value="5" selected>Cắt 5 clip mới nhất (= 10 video cho 2 kênh)</option>
+          <option value="10">Cắt 10 clip mới nhất (= 20 video cho 2 kênh)</option>
+          <option value="1">Chỉ cắt 1 clip trong link (?clip=...)</option>
+        </select>
+        <select id="new-lv-prod" style="background:#0b1120;border:1px solid var(--border);color:var(--text);padding:9px;border-radius:8px;font-size:13px;flex:1;">
+          <option value="AUTO">🤖 Tự nhận diện giọng nói Bác Chường (Auto AI)</option>
+          <option value="bokhop_chondro">Viên uống Bổ Khớp Chondro-Aid Pháp</option>
+          <option value="daday_baotu">Hỗn dịch Dạ Dày & Bao Tử</option>
+          <option value="giaidoc_gan">Viên uống Giải Độc Gan & Hạ Men Gan</option>
+          <option value="matngu_bonao">Viên uống Giấc Ngủ & Tuần Hoàn Não</option>
+        </select>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <button class="btn btn-yellow" style="width:100%;justify-content:center;padding:11px;" onclick="startFetchEditNewLink()">
+          🎬 Bắt Đầu Thu, Cắt & Edit Loạt Video Mới Đưa Lên Đầu Lịch Đăng
+        </button>
+      </div>
+      <div id="editor-status-box" style="margin-top:10px;padding:10px;background:#090d16;border-radius:8px;border:1px solid var(--border);font-size:13px;color:#4ade80;">
+        Sẵn sàng nhận link thu video mới.
+      </div>
+    </div>
+
+    <!-- CARD 5: KET NOI TU XA VE SERVER NHA (R620/R630 QUA PORT 4898 & CLOUDFLARE TUNNEL) -->
+    <div class="card" style="border:1px solid #22c55e;">
+      <h3>🌐 5. Kết Nối Từ Xa Về Server Ở Nhà (Port 4898 Đã Thoát CGNAT & Cầu Nối ssh.phamvuong.io.vn)</h3>
+      <div id="bridge-detail" style="font-size:13px; color:var(--muted); margin-bottom:10px; line-height:1.55;">
+        Đang kiểm tra trạng thái cầu nối về Server nhà...
+      </div>
+      <div class="row">
+        <button class="btn btn-green" style="width:100%;justify-content:center;padding:11px;" onclick="startRemoteBridge('')">
+          🌐 Mở Trình Duyệt Xác Thực & Bật Đường Hầm Nối Về Server Nhà (ssh.phamvuong.io.vn -> R620/R630)
+        </button>
+      </div>
+      <div class="row" style="margin-top:10px;">
+        <input id="wan-4898-input" placeholder="Hoặc nhập IP WAN hiện tại của nhà:4898 (vd: 115.77.xx.xx:4898)" style="flex:1;">
+        <button class="btn btn-blue" onclick="startRemoteBridge(document.getElementById('wan-4898-input').value)">
+          🔗 Kiểm Tra Port 4898
+        </button>
+      </div>
+      <div style="font-size:12px; color:var(--muted); margin-top:10px; line-height:1.5;">
+        • <b>Giải thích về Port 4898 của nhà bạn:</b> Router Viettel ở nhà đã thoát CGNAT và đang mở NAT <code>WAN :4898 -> 192.168.1.148:443</code>, đồng thời máy chủ nhà có sẵn đường hầm <code>ssh.phamvuong.io.vn</code>.<br>
+        • Khi bạn bấm nút xanh ở trên và bấm <b>Approve</b> trên trình duyệt, Laptop sẽ tự động lấy IP WAN mới nhất của nhà và nối thông thẳng về <b>Server R620/R630 (`192.168.1.240:8088` & Proxmox `192.168.1.20:8006`)</b>!
+      </div>
+    </div>
+  </div>
+
   <!-- BANG LICH DANG 1 TIENG / 1 VIDEO + NUT TU DONG LUU NHAP & DANH DAU DA DANG -->
   <div class="card" style="margin-bottom:18px;">
     <h3>📅 Danh Sách Video Lên Lịch (1 Tiếng / 1 Video) — Tự Động Lưu Nháp & Đánh Dấu Đã Đăng</h3>
@@ -680,6 +760,27 @@ async function refreshStatus() {
 
     document.getElementById('cache-detail').innerHTML =
       `Đang dùng Kho Video Offline trên Laptop (<code>C:\\TikTok_AutoHub\\video_cache</code>): <b>${r630.cached_offline_ready || 0}</b> video đã tải sẵn (Hoạt động độc lập không cần R630).`;
+
+    if (data.editor) {
+      const edBox = document.getElementById('editor-status-box');
+      if (edBox) {
+        edBox.innerHTML = data.editor.is_running
+          ? `<b style="color:#fde047;">⏳ ĐANG XỬ LÝ:</b> ${data.editor.progress_text}`
+          : `<b>Trạng thái Bộ Cắt & Edit Video Mới:</b> ${data.editor.progress_text}`;
+      }
+    }
+
+    if (data.bridge) {
+      const brBox = document.getElementById('bridge-detail');
+      if (brBox) {
+        const stBadge = data.bridge.r630_remote_reachable
+          ? `<span class="badge b-ok">✓ ĐÃ NỐI THÔNG VỀ SERVER NHÀ</span>`
+          : `<span class="badge b-warn">ĐANG Ở NGOÀI MẠNG NHÀ (CHƯA BẬT TUNNEL)</span>`;
+        brBox.innerHTML =
+          `${stBadge} &nbsp; <b>IP WAN Nhà (Port 4898):</b> <code>${data.bridge.home_wan_ip}</code><br>` +
+          `<span style="color:#38bdf8;">${data.bridge.last_bridge_msg}</span>`;
+      }
+    }
 
     const btnSched = document.getElementById('btn-toggle-sched');
     if (currentSettings.auto_scheduler_enabled) {
@@ -797,6 +898,14 @@ function testSwitch(ch) { apiPost('/api/test_switch', {channel: ch}); }
 function saveDraftOnOppo(itemId) { apiPost('/api/save_draft_on_oppo', {item_id: itemId}); }
 function markPosted(itemId) { apiPost('/api/mark_posted', {item_id: itemId}); }
 function triggerReminderNow() { apiPost('/api/trigger_reminder_now', {}); }
+function startRemoteBridge(wanIpPort) { apiPost('/api/start_remote_bridge', {wan_ip_port: wanIpPort || ''}); }
+function startFetchEditNewLink() {
+  apiPost('/api/fetch_edit_new_link', {
+    livevault_url: document.getElementById('new-lv-url').value,
+    max_clips: parseInt(document.getElementById('new-lv-count').value || '5', 10),
+    product_key: document.getElementById('new-lv-prod').value
+  });
+}
 function toggleScheduler() {
   apiPost('/api/update_settings', {auto_scheduler_enabled: !currentSettings.auto_scheduler_enabled});
 }
