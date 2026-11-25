@@ -183,11 +183,13 @@ def get_ledger_history(limit: int = 30) -> list[dict]:
 
 def get_settings() -> dict:
     default = {
-        "r630_url": "http://192.168.1.240:8088",
+        "r630_url": "https://tiktok.phamvuong.io.vn",
+        "r630_lan_url": "http://192.168.1.240:8088",
+        "r630_cloudflare_url": "https://tiktok.phamvuong.io.vn",
         "oppo_last_ip": "192.168.1.95",
         "interval_minutes": 60,
-        "auto_scheduler_enabled": False,
-        "post_mode": "PREPARE_AND_FILL",  # PREPARE_AND_FILL (Chuyen TK + Nap Video + Dien Caption + Mo Gio Hang) hoac FULL_AUTO_POST
+        "auto_scheduler_enabled": True,
+        "post_mode": "PREPARE_AND_FILL",
         "active_channels": ["@suckhoeviet.2", "@suc.khoe.vang.268"],
         "max_offline_cache_videos": 16,
     }
@@ -201,13 +203,27 @@ def get_settings() -> dict:
     return default
 
 
+def resolve_active_r630_url() -> str:
+    """Tu dong chon LAN (http://192.168.1.240:8088) khi o nha hoac Cloudflare Tunnel (https://tiktok.phamvuong.io.vn) khi di ra ngoai!"""
+    for candidate in ("http://192.168.1.240:8088", "https://tiktok.phamvuong.io.vn"):
+        try:
+            req = urllib.request.Request(f"{candidate}/api/queue", headers={"User-Agent": "TikTok-AutoHub/2.0"})
+            urllib.request.urlopen(req, timeout=3.5).read(64)
+            return candidate
+        except Exception:
+            pass
+    return "https://tiktok.phamvuong.io.vn"
+
+
 def sync_from_r630_to_laptop_cache() -> dict:
     """
-    Dong bo danh sach Queue & tai truoc (Pre-cache) cac video tiep theo tu R630 ve o C: cua Laptop.
-    Khi mang Laptop + Oppo A57 ra ngoai (khong co R630), Laptop van dung kho video da tai san nay!
+    Dong bo danh sach Queue & tai truoc (Pre-cache) cac video tiep theo tu R630
+    (qua LAN 192.168.1.240:8088 hoac qua Cloudflare https://tiktok.phamvuong.io.vn khi di ra ngoai!).
     """
     cfg = get_settings()
-    r630_url = cfg["r630_url"].rstrip("/")
+    r630_url = resolve_active_r630_url()
+    cfg["r630_url"] = r630_url
+    SETTINGS_FILE.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
     max_cache = cfg.get("max_offline_cache_videos", 16)
 
     init_db()
@@ -222,7 +238,8 @@ def sync_from_r630_to_laptop_cache() -> dict:
     r630_reachable = False
     remote_queue = []
     try:
-        raw = urllib.request.urlopen(f"{r630_url}/api/queue", timeout=5).read().decode("utf-8")
+        req = urllib.request.Request(f"{r630_url}/api/queue", headers={"User-Agent": "TikTok-AutoHub/2.0"})
+        raw = urllib.request.urlopen(req, timeout=6).read().decode("utf-8")
         remote_queue = json.loads(raw)
         r630_reachable = True
     except Exception:
