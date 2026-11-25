@@ -109,12 +109,12 @@ def is_laptop_cloudflare_tunnel_running() -> bool:
         return True
     try:
         out = subprocess.run(
-            ["tasklist", "/FI", "IMAGENAME eq cloudflared.exe"],
+            ["powershell", "-NoProfile", "-Command", "Get-CimInstance Win32_Process -Filter \"Name='cloudflared.exe'\" | Select-Object -ExpandProperty CommandLine"],
             capture_output=True,
             text=True,
-            timeout=3,
+            timeout=4,
         ).stdout
-        return "cloudflared.exe" in out.lower()
+        return "tiktok-laptop-master" in (out or "").lower()
     except Exception:
         return False
 
