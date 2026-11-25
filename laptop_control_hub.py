@@ -1,17 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-TIKTOK AUTOHUB - STANDALONE LAPTOP CONTROLLER, AUTO-SAVE-DRAFT (LƯU NHÁP) & 1-HOUR POST REMINDER
-Hoan thien theo dung yeu cau cua nguoi dung (khi Laptop + Oppo A57 di ra ngoai cung LAN, khac mang R630):
-1. Ket noi Oppo A57 tren mang LAN moi (10.110.8.x):
-   - Ho tro Nhap IP:Port Go loi khong day (khong can ma ghep noi 6 so vi da co khoa RSA)
-   - Ho tro Cam cap USB 3 giay (tu bat cong 5555 + tu doc IP Wi-Fi moi + tu ket noi Wi-Fi)
-   - Ho tro Tu bat IP khi Oppo A57 mo trang http://<IP-Laptop>:8099/mobile
-2. Tu dong LUU NHAP (Save Draft) tren Oppo A57 kem Caption Tieng Viet CO DAU 100%:
-   - Chuyen dung tai khoan (@suckhoeviet.2 / @suc.khoe.vang.268)
-   - Day duy nhat 1 video vao Camera -> Mo TikTok -> Chon video #1 -> Dan Caption Tieng Viet CO DAU 100% (KEYCODE_PASTE 279) -> Bam 'Nháp' (188, 1540)!
-3. Nhac lich dang moi 1 TIENG (60 phut / 1 video):
-   - Moi 60 phut: Tu dong Luu Nhap bai tiep theo lên Oppo A57 (neu chua luu nhap) + Phat chuong & Hien Popup Nhac Dang tren Laptop
-   - Nguoi dung chi can mo muc [Nháp] tren TikTok Oppo A57 -> Chon san pham GMV Max -> Bam [Đăng] -> Bam [✅ Đánh Dấu Đã Đăng]!
+TIKTOK AUTOHUB MASTER CONTROL CENTER v3.0
+- Giao dien chia 4 Tab chuyen nghiep, gon gang, de nhin.
+- Thanh Dan Duong Full Flow 4 Buoc + Hop Goi Y Thong Minh (Smart Flow Coach).
+- Phan hoi tuc thi (Instant Loading Modal + Dong ho dem giay + Live Step Logs + Toast Notification) cho MOI thao tac.
+- Tu dong quan ly Cloudflare Tunnel doc lap ngay tren Laptop (tiktok-laptop-master):
+  + https://master.phamvuong.io.vn -> http://127.0.0.1:8099 (Dieu khien Laptop nay tu xa khi di du lich)
+  + https://idrac.phamvuong.io.vn & https://idrac-rescue.phamvuong.io.vn -> https://192.168.1.11 (Cuu ho iDRAC R620 truc tiep tu Laptop, khong phu thuoc VM100 hay Server)
+  + https://pve-rescue.phamvuong.io.vn -> https://192.168.1.20:8006 (Cuu ho Proxmox truc tiep tu Laptop)
 """
 import ctypes
 import json
@@ -59,13 +55,139 @@ from local_video_editor import (
 )
 
 PORT = 8099
+CLOUDFLARED_EXE = r"C:\Program Files (x86)\cloudflared\cloudflared.exe"
+LAPTOP_CF_CONFIG = DATA_DIR / "cloudflared" / "config.yml"
+LAPTOP_CF_PROC = None
+
 RUNTIME_STATE = {
     "last_action_time": datetime.now().strftime("%H:%M:%S"),
-    "last_action_result": "Chế độ Lưu Nháp (Draft) kèm Caption Tiếng Việt có dấu 100% & Nhắc lịch đăng mỗi 1 tiếng đã sẵn sàng!",
+    "last_action_result": "Trạm Kiểm Soát Master v3.0 đã sẵn sàng! Mọi thao tác đều có phản hồi trực tiếp theo thời gian thực.",
     "next_reminder_epoch": time.time() + 3600,
     "r630_sync_status": {"r630_online": False, "cached_offline_ready": 0, "total_queue": 0},
     "oppo_status": {"connected": False, "serial": None, "mode": "NONE", "detail": "Đang kiểm tra..."},
+    "laptop_tunnel_active": False,
 }
+
+LIVE_ACTION = {
+    "active": False,
+    "title": "",
+    "step": "Sẵn sàng",
+    "started_epoch": 0,
+    "logs": [
+        f"[{datetime.now().strftime('%H:%M:%S')}] Hệ thống Master Control v3.0 khởi động thành công."
+    ],
+}
+
+
+def push_live_log(msg: str, step: str = None):
+    ts = datetime.now().strftime("%H:%M:%S")
+    entry = f"[{ts}] {msg}"
+    LIVE_ACTION["logs"].append(entry)
+    if len(LIVE_ACTION["logs"]) > 60:
+        LIVE_ACTION["logs"] = LIVE_ACTION["logs"][-60:]
+    if step:
+        LIVE_ACTION["step"] = step
+    RUNTIME_STATE["last_action_time"] = ts
+    RUNTIME_STATE["last_action_result"] = msg
+
+
+def begin_live_action(title: str, initial_step: str):
+    LIVE_ACTION["active"] = True
+    LIVE_ACTION["title"] = title
+    LIVE_ACTION["started_epoch"] = time.time()
+    push_live_log(f"▶ BẮT ĐẦU: {title} — {initial_step}", step=initial_step)
+
+
+def end_live_action(final_msg: str):
+    push_live_log(final_msg, step=final_msg)
+    LIVE_ACTION["active"] = False
+
+
+def is_laptop_cloudflare_tunnel_running() -> bool:
+    global LAPTOP_CF_PROC
+    if LAPTOP_CF_PROC is not None and LAPTOP_CF_PROC.poll() is None:
+        return True
+    try:
+        out = subprocess.run(
+            ["tasklist", "/FI", "IMAGENAME eq cloudflared.exe"],
+            capture_output=True,
+            text=True,
+            timeout=3,
+        ).stdout
+        return "cloudflared.exe" in out.lower()
+    except Exception:
+        return False
+
+
+def control_laptop_cloudflare_tunnel(enable: bool = True) -> dict:
+    """
+    Bat/Tat Cloudflare Tunnel doc lap ngay tren Laptop (tiktok-laptop-master):
+    - https://master.phamvuong.io.vn -> http://127.0.0.1:8099
+    - https://idrac.phamvuong.io.vn & https://idrac-rescue.phamvuong.io.vn -> https://192.168.1.11
+    - https://pve-rescue.phamvuong.io.vn -> https://192.168.1.20:8006
+    """
+    global LAPTOP_CF_PROC
+    if not enable:
+        if LAPTOP_CF_PROC is not None:
+            try:
+                LAPTOP_CF_PROC.terminate()
+            except Exception:
+                pass
+            LAPTOP_CF_PROC = None
+        subprocess.run(["taskkill", "/F", "/IM", "cloudflared.exe"], capture_output=True)
+        RUNTIME_STATE["laptop_tunnel_active"] = False
+        msg = "⏹️ Đã TẮT đường hầm Cloudflare Từ Xa trên Laptop (master.phamvuong.io.vn & idrac.phamvuong.io.vn)."
+        push_live_log(msg)
+        return {"ok": True, "active": False, "message": msg}
+
+    if is_laptop_cloudflare_tunnel_running():
+        RUNTIME_STATE["laptop_tunnel_active"] = True
+        msg = "✓ Đường hầm Cloudflare trên Laptop đang hoạt động: https://master.phamvuong.io.vn & https://idrac.phamvuong.io.vn"
+        return {"ok": True, "active": True, "message": msg}
+
+    if not Path(CLOUDFLARED_EXE).exists() or not LAPTOP_CF_CONFIG.exists():
+        msg = f"⚠️ Không tìm thấy cloudflared.exe hoặc {LAPTOP_CF_CONFIG}"
+        push_live_log(msg)
+        return {"ok": False, "active": False, "message": msg}
+
+    try:
+        log_file = open(str(DATA_DIR / "cloudflared_laptop.log"), "a", encoding="utf-8")
+        creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+        LAPTOP_CF_PROC = subprocess.Popen(
+            [
+                CLOUDFLARED_EXE,
+                "tunnel",
+                "--config",
+                str(LAPTOP_CF_CONFIG),
+                "run",
+                "tiktok-laptop-master",
+            ],
+            stdout=log_file,
+            stderr=log_file,
+            creationflags=creation_flags,
+        )
+        time.sleep(1.5)
+        RUNTIME_STATE["laptop_tunnel_active"] = is_laptop_cloudflare_tunnel_running()
+        msg = (
+            "✓ Đã BẬT đường hầm Cloudflare Từ Xa trực tiếp trên Laptop! "
+            "Điều khiển Master từ xa: https://master.phamvuong.io.vn | Cứu hộ iDRAC 192.168.1.11: https://idrac.phamvuong.io.vn"
+        )
+        push_live_log(msg)
+        return {"ok": True, "active": RUNTIME_STATE["laptop_tunnel_active"], "message": msg}
+    except Exception as e:
+        msg = f"⚠️ Lỗi khởi chạy Cloudflare Tunnel trên Laptop: {e}"
+        push_live_log(msg)
+        return {"ok": False, "active": False, "message": msg}
+
+
+def check_idrac_lan_reachable() -> bool:
+    try:
+        import socket
+        s = socket.create_connection(("192.168.1.11", 443), timeout=1.2)
+        s.close()
+        return True
+    except Exception:
+        return False
 
 
 def popup_windows_reminder(title: str, message: str):
@@ -98,7 +220,7 @@ def get_ready_queue_with_1h_schedule() -> list[dict]:
     ch2 = [x for x in raw if x.get("status") != "POSTED" and x.get("channel") == "@suc.khoe.vang.268"]
 
     interleaved = []
-    max_len = max(len(ch1), len(ch2))
+    max_len = max(len(ch1), len(ch2)) if (ch1 or ch2) else 0
     for i in range(max_len):
         if i < len(ch1):
             interleaved.append(ch1[i])
@@ -109,7 +231,7 @@ def get_ready_queue_with_1h_schedule() -> list[dict]:
     for idx, item in enumerate(interleaved):
         slot_dt = base_time + timedelta(hours=idx)
         item["scheduled_1h_slot"] = (
-            "Ngay bây giờ (Khung giờ hiện tại)" if idx == 0 else f"{slot_dt.strftime('%H:%M · %d/%m/%Y')} (Cách {idx}h)"
+            "Ngay bây giờ (Bài kế tiếp)" if idx == 0 else f"{slot_dt.strftime('%H:%M · %d/%m/%Y')} (Cách {idx}h)"
         )
         fname = Path(item.get("output_video", "")).name
         item["cached_offline"] = (CACHE_DIR / fname).exists()
@@ -117,13 +239,10 @@ def get_ready_queue_with_1h_schedule() -> list[dict]:
 
 
 def trigger_1hour_draft_and_reminder() -> dict:
-    """
-    Khi den gio nhac (moi 1 tieng) hoac khi bam nut '[🔔 Lưu Nháp & Nhắc Đăng Ngay]':
-    1. Neu bai dau tien chua Luu Nhap va Oppo A57 dang ket noi -> Tu dong Chuyen TK + Day Video + Dan Caption Tieng Viet Co Dau + Bam 'Nháp'!
-    2. Phat chuong & Hien Popup nhac nguoi dung mo muc [Nháp] tren Oppo A57 -> Chon san pham -> Bam [Đăng]!
-    """
+    begin_live_action("Tự động Lưu Nháp & Nhắc lịch 1 tiếng", "Đang kiểm tra hàng chờ video...")
     ready = get_ready_queue_with_1h_schedule()
     if not ready:
+        end_live_action("⚠️ Không còn video nào trong hàng chờ.")
         return {"ok": False, "message": "Không còn video nào trong hàng chờ."}
 
     due_item = ready[0]
@@ -132,59 +251,77 @@ def trigger_1hour_draft_and_reminder() -> dict:
 
     oppo_now = quick_check_oppo_connected()
     if due_item.get("status") != "SAVED_DRAFT" and oppo_now.get("connected"):
+        push_live_log(f"Đang đẩy video {due_item['id']} sang kênh {due_item['channel']} trên Oppo A57 & dán Caption Tiếng Việt...")
         res = auto_save_draft_on_oppo(item_id=due_item["id"])
         draft_msg = res.get("message", "")
     elif not oppo_now.get("connected"):
         draft_msg = "⚠️ Lưu ý: Oppo A57 chưa kết nối ADB nên hệ thống chưa tự bấm Lưu Nháp được. Hãy kết nối Oppo A57 để hệ thống tự động Lưu Nháp!"
 
-    RUNTIME_STATE["last_action_time"] = datetime.now().strftime("%H:%M:%S")
-    RUNTIME_STATE["last_action_result"] = f"🔔 NHẮC LỊCH ĐĂNG (1 Tiếng/Video - {due_item['channel']}): {draft_msg}"
+    end_live_action(f"🔔 ĐẾN GIỜ ĐĂNG BÀI ({due_item['channel']}): {draft_msg}")
 
-    popup_windows_reminder(
-        "⏰ ĐẾN GIỜ ĐĂNG VIDEO TIKTOK TỪ MỤC [NHÁP] (1 TIẾNG / 1 VIDEO)",
-        f"Đã đến khung giờ đăng bài tiếp theo!\n\n"
-        f"• Tài khoản TikTok: {due_item['channel']}\n"
-        f"• Sản phẩm cần chọn: {due_item['product_name']}\n"
-        f"• Shop GMV Max ID: {due_item['seller_id']}\n\n"
-        f"Trạng thái trên Oppo A57:\n{draft_msg}\n\n"
-        f"👉 BẠN CHỈ CẦN LÀM 2 BƯỚC CUỐI TRÊN OPPO A57:\n"
-        f"1) Mở mục [Nháp] trong Hồ sơ kênh {due_item['channel']} -> Chọn Sản Phẩm -> Bấm [Đăng].\n"
-        f"2) Bấm nút màu xanh [✅ 2. Đánh Dấu Đã Đăng] trên bảng điều khiển để khóa chống trùng và hẹn nhắc 1 tiếng sau!",
+    popup_text = (
+        f"⏰ ĐẾN KHUNG GIỜ ĐĂNG TIKTOK (1 TIẾNG / 1 VIDEO)!\n\n"
+        f"• Tài khoản cần đăng: {due_item['channel']}\n"
+        f"• Sản phẩm cần gắn giỏ hàng: {due_item['product_name']}\n"
+        f"• Shop GMV Max: {due_item.get('seller_name', 'Shop GMV Max')}\n"
+        f"• Trạng thái Nháp: {draft_msg}\n\n"
+        f"👉 THAO TÁC TRÊN OPPO A57 (Chỉ 10 giây):\n"
+        f"1. Mở TikTok trên Oppo A57 -> Vào Hồ sơ ({due_item['channel']}) -> Mở mục [Nháp]\n"
+        f"2. Mở bài nháp trên cùng (đã có sẵn Video & Caption Tiếng Việt có dấu)\n"
+        f"3. Chọn 'Thêm liên kết' -> Chọn sản phẩm '{due_item['product_name']}' -> Bấm [Đăng]\n"
+        f"4. Bấm nút [✅ 2. Đánh Dấu Đã Đăng Từ Nháp] trên màn hình để khóa chống trùng!"
     )
-    return res
+    popup_windows_reminder("🔔 NHẮC LỊCH ĐĂNG TIKTOK (ĐÃ LƯU NHÁP TIẾNG VIỆT)", popup_text)
+    return {
+        "ok": True,
+        "message": f"🔔 Đã nhắc lịch & xử lý Lưu Nháp cho kênh {due_item['channel']} ({due_item['product_name']})!",
+        "draft_result": res,
+    }
 
 
 def background_scheduler_loop():
-    init_db()
-    last_sync_ts = 0.0
-    while True:
-        try:
-            now = time.time()
-            RUNTIME_STATE["oppo_status"] = quick_check_oppo_connected()
-
-            if now - last_sync_ts >= 180:
-                RUNTIME_STATE["r630_sync_status"] = sync_from_r630_to_laptop_cache()
-                last_sync_ts = now
-
-            cfg = get_settings()
-            if cfg.get("auto_scheduler_enabled", True):
-                if now >= RUNTIME_STATE["next_reminder_epoch"]:
-                    trigger_1hour_draft_and_reminder()
-                    interval_sec = max(15, int(cfg.get("interval_minutes", 60))) * 60
-                    RUNTIME_STATE["next_reminder_epoch"] = time.time() + interval_sec
-        except Exception as e:
-            RUNTIME_STATE["last_action_result"] = f"Lỗi luồng nền: {e}"
-        time.sleep(8)
-
-
-class LaptopHubHandler(BaseHTTPRequestHandler):
-    def log_message(self, format, *args):
+    time.sleep(2)
+    try:
+        RUNTIME_STATE["r630_sync_status"] = sync_from_r630_to_laptop_cache()
+    except Exception:
         pass
+    try:
+        RUNTIME_STATE["oppo_status"] = quick_check_oppo_connected()
+    except Exception:
+        pass
+
+    last_sync = time.time()
+    while True:
+        time.sleep(5)
+        cfg = get_settings()
+        RUNTIME_STATE["laptop_tunnel_active"] = is_laptop_cloudflare_tunnel_running()
+
+        if time.time() - last_sync > 300:
+            try:
+                RUNTIME_STATE["r630_sync_status"] = sync_from_r630_to_laptop_cache()
+            except Exception:
+                pass
+            last_sync = time.time()
+
+        if not cfg.get("auto_scheduler_enabled", True):
+            continue
+
+        now = time.time()
+        if now >= RUNTIME_STATE["next_reminder_epoch"]:
+            interval_sec = max(15, int(cfg.get("interval_minutes", 60))) * 60
+            RUNTIME_STATE["next_reminder_epoch"] = now + interval_sec
+            trigger_1hour_draft_and_reminder()
+
+
+class HubHandler(BaseHTTPRequestHandler):
+    def log_message(self, format, *args):
+        return
 
     def _send_json(self, data: dict, status: int = 200):
         raw = json.dumps(data, ensure_ascii=False).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Content-Length", str(len(raw)))
         self.end_headers()
         self.wfile.write(raw)
@@ -194,7 +331,6 @@ class LaptopHubHandler(BaseHTTPRequestHandler):
         qs = urllib.parse.parse_qs(parsed.query)
         client_ip = self.client_address[0]
 
-        # Neu Oppo A57 truy cap bat ky trang nao (/mobile hoac /auto_copy), tu dong ghi nhan IP cua Oppo A57 tren mang LAN moi!
         if client_ip not in ("127.0.0.1", "::1", get_laptop_lan_ip()):
             cfg = get_settings()
             if cfg.get("oppo_last_ip") != client_ip:
@@ -203,11 +339,22 @@ class LaptopHubHandler(BaseHTTPRequestHandler):
             if not quick_check_oppo_connected().get("connected"):
                 threading.Thread(target=scan_and_connect_single_ip, args=(client_ip,), daemon=True).start()
 
+        if parsed.path == "/api/live_progress":
+            elapsed = int(time.time() - LIVE_ACTION["started_epoch"]) if LIVE_ACTION["active"] else 0
+            return self._send_json({
+                "active": LIVE_ACTION["active"],
+                "title": LIVE_ACTION["title"],
+                "step": LIVE_ACTION["step"],
+                "elapsed_seconds": elapsed,
+                "logs": LIVE_ACTION["logs"][-20:],
+            })
+
         if parsed.path == "/api/status":
             cfg = get_settings()
             oppo = quick_check_oppo_connected()
             RUNTIME_STATE["oppo_status"] = oppo
-            ledger = get_ledger_history(30)
+            RUNTIME_STATE["laptop_tunnel_active"] = is_laptop_cloudflare_tunnel_running()
+            ledger = get_ledger_history(40)
             ready_queue = get_ready_queue_with_1h_schedule()
             cached_count = sum(1 for x in ready_queue if x.get("cached_offline"))
             RUNTIME_STATE["r630_sync_status"]["cached_offline_ready"] = cached_count
@@ -217,7 +364,7 @@ class LaptopHubHandler(BaseHTTPRequestHandler):
             r630_svcs = {"tiktok-worker": True, "tiktok-portal": True, "cloudflared-tiktok": True}
             try:
                 r630_base = cfg.get("r630_url", "https://tiktok.phamvuong.io.vn").rstrip("/")
-                raw_s = urllib.request.urlopen(f"{r630_base}/api/r630_service_status", timeout=2.5).read().decode("utf-8")
+                raw_s = urllib.request.urlopen(f"{r630_base}/api/r630_service_status", timeout=2.2).read().decode("utf-8")
                 r630_svcs = json.loads(raw_s).get("services", r630_svcs)
             except Exception:
                 pass
@@ -225,7 +372,15 @@ class LaptopHubHandler(BaseHTTPRequestHandler):
                 "settings": cfg,
                 "lan_ip": get_laptop_lan_ip(),
                 "runtime": RUNTIME_STATE,
+                "live_action": {
+                    "active": LIVE_ACTION["active"],
+                    "title": LIVE_ACTION["title"],
+                    "step": LIVE_ACTION["step"],
+                    "elapsed_seconds": int(time.time() - LIVE_ACTION["started_epoch"]) if LIVE_ACTION["active"] else 0,
+                    "logs": LIVE_ACTION["logs"][-25:],
+                },
                 "bridge": get_bridge_status(),
+                "idrac_lan_ok": check_idrac_lan_reachable(),
                 "r630_services": r630_svcs,
                 "editor": EDITOR_STATUS,
                 "next_wait_seconds": rem_sec,
@@ -234,7 +389,6 @@ class LaptopHubHandler(BaseHTTPRequestHandler):
             })
 
         if parsed.path == "/auto_copy":
-            # Trang Full-Screen 720x1600 phuc vu copy_vietnamese_to_oppo_clipboard()
             item_id = qs.get("id", [""])[0]
             ready = get_ready_queue_with_1h_schedule()
             item = next((x for x in ready if x.get("id") == item_id), ready[0] if ready else None)
@@ -277,7 +431,7 @@ class LaptopHubHandler(BaseHTTPRequestHandler):
                 data = fpath.read_bytes()
                 self.send_response(200)
                 self.send_header("Content-Type", "video/mp4")
-                self.send_header("Content-Disposition", f'attachment; filename="{fname}"')
+                self.send_header("Content-Disposition", f'inline; filename="{fname}"')
                 self.send_header("Content-Length", str(len(data)))
                 self.end_headers()
                 self.wfile.write(data)
@@ -311,58 +465,64 @@ class LaptopHubHandler(BaseHTTPRequestHandler):
 
         if parsed.path == "/api/connect_oppo":
             hint = (body.get("ip_port") or "").strip() or None
+            begin_live_action("Tìm & Kết nối ADB Oppo A57", f"Đang quét USB / mDNS / Wi-Fi LAN ({hint or 'Tự động'})...")
             res = auto_connect_oppo(hint_ip=hint)
             RUNTIME_STATE["oppo_status"] = res
-            RUNTIME_STATE["last_action_time"] = datetime.now().strftime("%H:%M:%S")
-            RUNTIME_STATE["last_action_result"] = res.get("detail", "")
+            end_live_action(res.get("detail", "Đã kiểm tra kết nối Oppo A57"))
             return self._send_json(res)
 
         if parsed.path == "/api/pair_oppo":
+            begin_live_action("Ghép nối Gỡ lỗi không dây Oppo A57", f"Đang ghép nối với {body.get('pair_ip_port', '')}...")
             res = pair_oppo_wireless(
                 body.get("pair_ip_port", ""),
                 body.get("pair_code", ""),
                 body.get("main_ip_port", ""),
             )
-            RUNTIME_STATE["last_action_time"] = datetime.now().strftime("%H:%M:%S")
-            RUNTIME_STATE["last_action_result"] = res.get("message", "")
+            end_live_action(res.get("message", ""))
             return self._send_json(res)
 
         if parsed.path == "/api/sync_r630":
+            begin_live_action("Đồng bộ Kho Video từ Server R630", "Đang kết nối tới R630 và tải video về bộ nhớ đệm Offline...")
             res = sync_from_r630_to_laptop_cache()
             RUNTIME_STATE["r630_sync_status"] = res
-            RUNTIME_STATE["last_action_time"] = datetime.now().strftime("%H:%M:%S")
-            RUNTIME_STATE["last_action_result"] = (
-                f"Kho Offline Laptop: {res['cached_offline_ready']} video sẵn sàng (R630 {'Online' if res['r630_online'] else 'Đang khác mạng - Dùng Cache Offline'})."
-            )
+            msg = f"✓ Đồng bộ hoàn tất: {res['cached_offline_ready']}/{res['total_queue']} video đã sẵn sàng Offline trên Laptop (Tải mới: {res.get('downloaded_now', 0)} video)."
+            end_live_action(msg)
+            res["message"] = msg
             return self._send_json(res)
 
         if parsed.path == "/api/test_switch":
             ch = body.get("channel", "@suckhoeviet.2")
+            begin_live_action(f"Chuyển tài khoản TikTok sang {ch}", "Đang kiểm tra kết nối ADB Oppo A57...")
             conn = auto_connect_oppo()
             if not conn["connected"]:
+                end_live_action(conn["detail"])
                 return self._send_json({"ok": False, "message": conn["detail"]})
+            push_live_log(f"Đang mở TikTok trên Oppo A57 ({conn['serial']}) và chuyển tài khoản sang {ch}...")
             ok, msg = ensure_correct_tiktok_account(conn["serial"], ch)
-            RUNTIME_STATE["last_action_time"] = datetime.now().strftime("%H:%M:%S")
-            RUNTIME_STATE["last_action_result"] = msg
+            end_live_action(msg)
             return self._send_json({"ok": ok, "message": msg})
 
         if parsed.path == "/api/save_draft_on_oppo":
             item_id = body.get("item_id") or None
             ch = body.get("channel") or None
+            begin_live_action(
+                f"Tự động Đẩy Video + Dán Tiếng Việt & Lưu Nháp ({ch or 'Bài kế tiếp'})",
+                "Bước 1/5: Kiểm tra chống trùng SHA-256 & kết nối ADB Oppo A57...",
+            )
+            push_live_log("Bước 2/5: Nạp Caption Tiếng Việt có dấu vào Clipboard Oppo A57 & chuyển đúng tài khoản TikTok...")
             res = auto_save_draft_on_oppo(item_id=item_id, channel=ch)
-            RUNTIME_STATE["last_action_time"] = datetime.now().strftime("%H:%M:%S")
-            RUNTIME_STATE["last_action_result"] = res.get("message", "")
+            end_live_action(res.get("message", "Hoàn tất thao tác Lưu Nháp"))
             return self._send_json(res)
 
         if parsed.path == "/api/mark_posted":
             item_id = body.get("item_id", "")
+            begin_live_action("Xác nhận Đã Đăng & Khóa Chống Trùng SHA-256", f"Đang ghi sổ cái chống trùng cho {item_id}...")
             res = mark_video_as_posted(item_id)
-            RUNTIME_STATE["last_action_time"] = datetime.now().strftime("%H:%M:%S")
-            RUNTIME_STATE["last_action_result"] = res.get("message", "")
             if res.get("ok"):
                 cfg = get_settings()
                 interval_sec = max(15, int(cfg.get("interval_minutes", 60))) * 60
                 RUNTIME_STATE["next_reminder_epoch"] = time.time() + interval_sec
+            end_live_action(res.get("message", ""))
             return self._send_json(res)
 
         if parsed.path == "/api/trigger_reminder_now":
@@ -371,740 +531,1428 @@ class LaptopHubHandler(BaseHTTPRequestHandler):
 
         if parsed.path == "/api/start_remote_bridge":
             custom_wan = body.get("wan_ip_port", "")
+            begin_live_action("Kiểm tra Kết nối Cloudflare R630 & Laptop", "Đang kiểm tra đường hầm phamvuong.io.vn...")
             res = start_cloudflare_login_and_ssh_tunnel(custom_wan)
-            RUNTIME_STATE["last_action_time"] = datetime.now().strftime("%H:%M:%S")
-            RUNTIME_STATE["last_action_result"] = res.get("last_bridge_msg", "")
+            end_live_action(res.get("last_bridge_msg", ""))
+            return self._send_json(res)
+
+        if parsed.path == "/api/toggle_laptop_tunnel":
+            enable = bool(body.get("enable", True))
+            begin_live_action(
+                "Điều khiển Đường Hầm Từ Xa Trên Laptop (Master & iDRAC 192.168.1.11)",
+                "Đang bật/tắt tiến trình cloudflared.exe trên Laptop...",
+            )
+            res = control_laptop_cloudflare_tunnel(enable=enable)
+            end_live_action(res.get("message", ""))
             return self._send_json(res)
 
         if parsed.path == "/api/fetch_edit_new_link":
             lv_url = body.get("livevault_url", "")
             max_c = int(body.get("max_clips", 5))
             p_key = body.get("product_key", "AUTO")
+            begin_live_action("Thu & Edit Loạt Video Mới từ LiveVault", f"Đang khởi chạy tiến trình cắt {max_c} clip...")
             res = start_batch_fetch_and_edit(lv_url, max_clips=max_c, forced_product_key=p_key)
-            RUNTIME_STATE["last_action_time"] = datetime.now().strftime("%H:%M:%S")
-            RUNTIME_STATE["last_action_result"] = res.get("message", "")
+            end_live_action(res.get("message", ""))
             return self._send_json(res)
 
         if parsed.path == "/api/change_item_product":
             iid = body.get("item_id", "")
             pkey = body.get("product_key", "")
+            begin_live_action(
+                f"Đổi sản phẩm & Render lại bìa vàng ({pkey})",
+                f"Đang dùng FFmpeg đóng lại khung bìa vàng mới và viết lại Caption SEO cho {iid}...",
+            )
             res = change_video_item_product(iid, pkey)
-            RUNTIME_STATE["last_action_time"] = datetime.now().strftime("%H:%M:%S")
-            RUNTIME_STATE["last_action_result"] = res.get("message", "")
+            end_live_action(res.get("message", ""))
             return self._send_json(res)
 
         if parsed.path == "/api/add_custom_product":
+            begin_live_action("Thêm sản phẩm mới vào Từ điển AI", "Đang lưu cấu hình sản phẩm...")
             res = add_custom_product(
-                product_key=body.get("product_key", ""),
-                product_name=body.get("product_name", ""),
-                keywords_csv=body.get("keywords_csv", ""),
-                cover_lines_text=body.get("cover_lines_text", ""),
-                caption_seo_text=body.get("caption_seo_text", ""),
-                seller_id=body.get("seller_id", "7494727475325798000"),
+                body.get("product_key", ""),
+                body.get("product_name", ""),
+                body.get("cover_title", ""),
+                body.get("benefit_1", ""),
+                body.get("benefit_2", ""),
+                body.get("dosage", ""),
+                body.get("keywords", ""),
             )
-            RUNTIME_STATE["last_action_time"] = datetime.now().strftime("%H:%M:%S")
-            RUNTIME_STATE["last_action_result"] = res.get("message", "")
+            end_live_action(res.get("message", ""))
             return self._send_json(res)
 
-        if parsed.path == "/api/master_control":
-            target = body.get("target", "")
-            action = body.get("action", "")
-            from oppo_auto_poster import run_adb
-            msg = ""
-            if target == "r630_worker":
-                r630_base = get_settings().get("r630_url", "https://tiktok.phamvuong.io.vn").rstrip("/")
-                try:
-                    req = urllib.request.Request(f"{r630_base}/api/r630_service?action={action}&service=tiktok-worker", method="POST")
-                    urllib.request.urlopen(req, timeout=6).read()
-                    msg = f"✓ Đã {'BẬT' if action=='start' else 'TẮT'} Worker Tự Cắt Video 24/7 trên Server Dell R630!"
-                except Exception as e:
-                    msg = f"Lỗi điều khiển Worker R630: {e}"
-            elif target == "adb_server":
-                if action == "stop":
-                    run_adb(["kill-server"])
-                    msg = "⏹️ Đã TẮT dịch vụ ADB Server trên Laptop (Ngắt kết nối Oppo A57)."
-                else:
-                    run_adb(["kill-server"])
-                    run_adb(["start-server"])
-                    msg = "▶️ Đã BẬT lại dịch vụ ADB Server trên Laptop (Sẵn sàng kết nối Oppo A57)."
-            elif target == "laptop_hub" and action == "stop":
-                self._send_json({"ok": True, "message": "🛑 Đang tắt hoàn toàn Trạm Điều Khiển Laptop (Port 8099). Để bật lại, hãy mở file Master-Control-Station.cmd hoặc Start-TikTok-AutoHub.cmd!"})
-                threading.Thread(target=lambda: (time.sleep(0.8), os._exit(0)), daemon=True).start()
-                return
-            RUNTIME_STATE["last_action_time"] = datetime.now().strftime("%H:%M:%S")
-            RUNTIME_STATE["last_action_result"] = msg
-            return self._send_json({"ok": True, "message": msg})
-
-        if parsed.path == "/api/update_settings":
+        if parsed.path == "/api/toggle_scheduler":
             cfg = get_settings()
-            for k in ("auto_scheduler_enabled", "interval_minutes"):
-                if k in body:
-                    cfg[k] = body[k]
+            cfg["auto_scheduler_enabled"] = bool(body.get("enabled", True))
+            if "interval_minutes" in body:
+                cfg["interval_minutes"] = max(15, int(body["interval_minutes"]))
             SETTINGS_FILE.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
-            if cfg.get("auto_scheduler_enabled"):
-                RUNTIME_STATE["next_reminder_epoch"] = time.time() + int(cfg.get("interval_minutes", 60)) * 60
-            RUNTIME_STATE["last_action_time"] = datetime.now().strftime("%H:%M:%S")
-            RUNTIME_STATE["last_action_result"] = (
-                f"Đã cập nhật bộ nhắc đăng & lưu nháp 1 tiếng/video: {'ĐANG BẬT' if cfg['auto_scheduler_enabled'] else 'ĐANG TẮT'}"
-            )
-            return self._send_json({"ok": True, "settings": cfg})
+            RUNTIME_STATE["next_reminder_epoch"] = time.time() + cfg["interval_minutes"] * 60
+            state_txt = "▶️ ĐÃ BẬT Tự động Lưu Nháp & Nhắc lịch mỗi 1 tiếng" if cfg["auto_scheduler_enabled"] else "⏹️ ĐÃ TẮT Tự động Lưu Nháp & Nhắc lịch 1 tiếng"
+            push_live_log(state_txt)
+            return self._send_json({"ok": True, "settings": cfg, "message": state_txt})
 
-        self.send_error(404)
+        if parsed.path == "/api/r630_service_control":
+            svc = body.get("service", "tiktok-worker")
+            act = body.get("action", "restart")
+            begin_live_action(f"Điều khiển dịch vụ R630 ({svc} -> {act})", "Đang gửi lệnh tới Container 240 trên Server R630...")
+            cfg = get_settings()
+            r630_base = cfg.get("r630_url", "https://tiktok.phamvuong.io.vn").rstrip("/")
+            try:
+                req_data = json.dumps({"service": svc, "action": act}).encode("utf-8")
+                req = urllib.request.Request(
+                    f"{r630_base}/api/r630_service_control",
+                    data=req_data,
+                    headers={"Content-Type": "application/json", "User-Agent": "TikTok-AutoHub/3.0"},
+                    method="POST",
+                )
+                resp = json.loads(urllib.request.urlopen(req, timeout=8).read().decode("utf-8"))
+                msg = f"✓ Đã thực thi '{act.upper()}' cho dịch vụ '{svc}' trên Server R630!"
+                end_live_action(msg)
+                resp["message"] = msg
+                return self._send_json(resp)
+            except Exception as e:
+                msg = f"⚠️ Không thể gửi lệnh tới R630 ({r630_base}): {e}"
+                end_live_action(msg)
+                return self._send_json({"ok": False, "message": msg})
+
+        if parsed.path == "/api/local_service_control":
+            act = body.get("action", "")
+            if act == "restart_adb":
+                begin_live_action("Khởi động lại kết nối ADB Oppo A57", "Đang chạy adb kill-server & start-server...")
+                adb_exe = str(HUB_DIR / "tools" / "platform-tools" / "adb.exe")
+                subprocess.run([adb_exe, "kill-server"], capture_output=True)
+                time.sleep(0.5)
+                subprocess.run([adb_exe, "start-server"], capture_output=True)
+                res = auto_connect_oppo()
+                RUNTIME_STATE["oppo_status"] = res
+                msg = f"✓ Đã khởi động lại ADB Server: {res.get('detail', '')}"
+                end_live_action(msg)
+                return self._send_json({"ok": True, "message": msg})
+            if act == "stop_hub":
+                push_live_log("🛑 Đang tắt toàn bộ Trạm Kiểm Soát trên Laptop theo yêu cầu của bạn...")
+                def _DelayedExit():
+                    time.sleep(1.0)
+                    control_laptop_cloudflare_tunnel(enable=False)
+                    os._exit(0)
+                threading.Thread(target=_DelayedExit, daemon=True).start()
+                return self._send_json({
+                    "ok": True,
+                    "message": "🛑 Đã tắt Trạm Kiểm Soát Laptop & Đường hầm Cloudflare! Khi muốn bật lại, bạn nhấp đúp file Start-TikTok-AutoHub.cmd hoặc Master-Control-Station.cmd.",
+                })
+
+        self.send_error(404, "Not Found")
 
     def _build_mobile_oppo_card_html(self, item_id: str, client_ip: str) -> str:
         ready = get_ready_queue_with_1h_schedule()
         item = next((x for x in ready if x.get("id") == item_id), ready[0] if ready else None)
         if not item:
-            return "<h2 style='color:white;background:#0b0f19;padding:20px;font-family:sans-serif;'>Đã hoàn tất toàn bộ video trong hàng chờ!</h2>"
-
-        fname = Path(item.get("output_video", "")).name
+            return "<html><body style='background:#0b0f19;color:#fff;font-family:sans-serif;padding:20px;'><h2>Không còn bài nào trong hàng chờ</h2></body></html>"
         cap_json = json.dumps(item["caption_seo"], ensure_ascii=False)
         return f"""<!DOCTYPE html>
 <html lang="vi">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Oppo A57 — Kết Nối LAN & Lưu Nháp TikTok</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Oppo A57 — Copy Tiếng Việt Có Dấu & Lưu Nháp</title>
 <style>
-  body {{ margin:0; padding:16px; background:#0b0f19; color:#f8fafc; font-family:'Segoe UI',system-ui,sans-serif; }}
-  .card {{ background:#131b2e; border:2px solid #fde047; border-radius:16px; padding:18px; max-width:520px; margin:0 auto; }}
-  .ch {{ font-size:20px; font-weight:800; color:#fde047; margin-bottom:6px; }}
-  .sub {{ font-size:13px; color:#94a3b8; margin-bottom:12px; line-height:1.5; }}
-  .cap-box {{ background:#090d16; border:1px solid #334155; border-radius:12px; padding:14px;
-              font-size:15px; line-height:1.55; white-space:pre-line; color:#fff; margin-bottom:14px; }}
-  .btn {{ width:100%; border:none; border-radius:12px; padding:15px; font-size:16px; font-weight:800;
-          cursor:pointer; margin-bottom:10px; display:block; text-align:center; text-decoration:none; }}
-  .btn-yellow {{ background:#fde047; color:#000; }}
-  .btn-green {{ background:#22c55e; color:#052e16; }}
+  body {{ background:#090d16; color:#f8fafc; font-family:system-ui,sans-serif; padding:16px; margin:0; }}
+  .box {{ background:#131b2e; border:2px solid #22c55e; border-radius:14px; padding:16px; margin-bottom:14px; }}
+  .badge {{ display:inline-block; background:#fde047; color:#000; font-weight:800; padding:4px 10px; border-radius:99px; font-size:13px; margin-bottom:8px; }}
+  .cap {{ background:#0b0f19; border:1px solid #334155; border-radius:10px; padding:12px; font-size:14px; white-space:pre-wrap; line-height:1.5; color:#e2e8f0; margin:10px 0; }}
+  .btn {{ display:block; width:100%; padding:16px; border-radius:12px; border:none; font-size:17px; font-weight:800; text-align:center; text-decoration:none; margin-bottom:10px; cursor:pointer; box-sizing:border-box; }}
+  .btn-copy {{ background:#eab308; color:#000; }}
 </style>
 </head>
 <body>
-<div class="card">
-  <div style="background:rgba(34,197,94,0.18);border:1px solid #22c55e;color:#4ade80;padding:8px 12px;border-radius:8px;font-size:13px;font-weight:700;margin-bottom:10px;">
-    📡 Laptop đã tự động nhận diện IP Oppo A57 của bạn trên mạng LAN mới: <code>{client_ip}</code>
+  <div class="box">
+    <div class="badge">✓ ĐÃ GHI NHẬN IP OPPO A57: {client_ip}</div>
+    <h3 style="margin:4px 0 6px 0;color:#4ade80;">Kênh đích: {item['channel']}</h3>
+    <div style="font-size:14px;color:#fde047;font-weight:700;">🛒 Sản phẩm cần chọn: {item['product_name']}</div>
+    <div class="cap" id="capBox">{item['caption_seo']}</div>
+    <button class="btn btn-copy" id="copyBtn" onclick="copyViet()">📋 COPY CAPTION TIẾNG VIỆT CÓ DẤU</button>
   </div>
-  <div class="ch">🎯 Kênh: {item['channel']}</div>
-  <div class="sub">
-    <b>Sản phẩm gắn giỏ:</b> {item['product_name']}<br>
-    <b>Shop GMV Max ID:</b> <code>{item['seller_id']}</code><br>
-    <b>Trạng thái:</b> {item.get('status', 'READY')}
-  </div>
-
-  <div class="cap-box">{item['caption_seo']}</div>
-
-  <button class="btn btn-yellow" id="btn-copy" onclick="copyVietnameseCaption()">
-    📋 COPY CAPTION TIẾNG VIỆT CÓ DẤU (DỰ PHÒNG)
-  </button>
-
-  <button class="btn btn-green" id="btn-done" onclick="markPosted('{item['id']}')">
-    ✅ ĐÁNH DẤU ĐÃ ĐĂNG TỪ NHÁP (HẸN NHẮC 1 TIẾNG SAU)
-  </button>
-</div>
-
 <script>
-const CAPTION_TEXT = {cap_json};
-function copyVietnameseCaption() {{
+const CAP_TEXT = {cap_json};
+function copyViet() {{
   if (navigator.clipboard && navigator.clipboard.writeText) {{
-    navigator.clipboard.writeText(CAPTION_TEXT);
+    navigator.clipboard.writeText(CAP_TEXT);
   }}
   const ta = document.createElement('textarea');
-  ta.value = CAPTION_TEXT;
+  ta.value = CAP_TEXT;
   document.body.appendChild(ta);
   ta.select();
   document.execCommand('copy');
   document.body.removeChild(ta);
-  const b = document.getElementById('btn-copy');
-  b.textContent = '✓ ĐÃ COPY CAPTION TIẾNG VIỆT CÓ DẤU!';
-  b.style.background = '#4ade80';
-}}
-
-async function markPosted(itemId) {{
-  const r = await fetch('/api/mark_posted', {{
-    method: 'POST',
-    headers: {{'Content-Type': 'application/json'}},
-    body: JSON.stringify({{item_id: itemId}})
-  }});
-  const res = await r.json();
-  alert(res.message);
-  window.location.href = '/mobile';
+  const b = document.getElementById('copyBtn');
+  b.style.background = '#22c55e';
+  b.style.color = '#fff';
+  b.textContent = '✓ ĐÃ COPY TIẾNG VIỆT CÓ DẤU VÀO OPPO A57!';
 }}
 </script>
 </body>
 </html>"""
 
     def _build_dashboard_html(self) -> str:
-        return """<!DOCTYPE html>
+        return r"""<!DOCTYPE html>
 <html lang="vi">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>TikTok AutoHub — Tự Động Lưu Nháp (Caption Tiếng Việt) & Nhắc Lịch 1 Tiếng/Video</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trạm Kiểm Soát Master v3.0 — TikTok AutoHub & Cứu Hộ Từ Xa</title>
 <style>
   :root {
-    --bg: #0b0f19; --card: #131b2e; --border: #26324d;
-    --text: #f1f5f9; --muted: #94a3b8; --accent: #fde047;
-    --green: #22c55e; --red: #ef4444; --blue: #38bdf8;
+    --bg: #070b14;
+    --card: #101726;
+    --card-alt: #151f33;
+    --border: #24324d;
+    --gold: #facc15;
+    --green: #22c55e;
+    --blue: #38bdf8;
+    --purple: #a855f7;
+    --red: #ef4444;
+    --text: #f8fafc;
+    --muted: #94a3b8;
   }
-  * { box-sizing: border-box; font-family: 'Segoe UI', system-ui, sans-serif; }
-  body { margin: 0; padding: 20px; background: var(--bg); color: var(--text); }
-  .wrap { max-width: 1360px; margin: 0 auto; }
-  .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;
-            background: linear-gradient(135deg, #162038, #0f172a); padding: 18px 22px; border-radius: 14px;
-            border: 1px solid var(--border); margin-bottom: 18px; }
-  .title { font-size: 21px; font-weight: 800; color: var(--accent); }
-  .sub { font-size: 13px; color: var(--muted); margin-top: 4px; }
-  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(390px, 1fr)); gap: 16px; margin-bottom: 18px; }
-  .card { background: var(--card); border: 1px solid var(--border); border-radius: 14px; padding: 18px; }
-  .card h3 { margin: 0 0 10px 0; font-size: 16px; color: var(--accent); }
-  .badge { display: inline-block; padding: 5px 11px; border-radius: 99px; font-size: 12px; font-weight: 700; }
-  .b-ok { background: rgba(34,197,94,0.18); color: #4ade80; border: 1px solid #22c55e; }
-  .b-warn { background: rgba(239,68,68,0.18); color: #f87171; border: 1px solid #ef4444; }
-  .b-info { background: rgba(56,189,248,0.18); color: #38bdf8; border: 1px solid #0284c7; }
-  .b-draft { background: rgba(253,224,71,0.18); color: #fde047; border: 1px solid #eab308; }
-  .btn { cursor: pointer; border: none; border-radius: 9px; padding: 9px 13px; font-weight: 700; font-size: 13px;
-         transition: 0.15s; display: inline-flex; align-items: center; gap: 6px; text-decoration: none; }
-  .btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
-  .btn-yellow { background: var(--accent); color: #000; }
-  .btn-green { background: var(--green); color: #052e16; }
-  .btn-blue { background: var(--blue); color: #082f49; }
-  .btn-dark { background: #1e293b; color: var(--text); border: 1px solid var(--border); }
-  input { background: #0b1120; border: 1px solid var(--border); color: var(--text); padding: 9px 12px; border-radius: 8px; font-size: 13px; }
-  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
-  .log-bar { background: #0f172a; border-left: 4px solid var(--accent); padding: 12px 16px;
-             border-radius: 8px; margin-bottom: 18px; font-size: 14px; }
-  .timer-box { font-size: 23px; font-weight: 800; color: #4ade80; margin: 8px 0; }
-  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 10px; }
-  th, td { text-align: left; padding: 12px 8px; border-bottom: 1px solid var(--border); vertical-align: top; }
-  th { color: var(--muted); font-size: 12px; text-transform: uppercase; }
-  .mono { font-family: Consolas, monospace; font-size: 12px; color: #38bdf8; }
-  .cap-card { background: #090d16; border: 1px solid #26324d; border-radius: 10px; padding: 10px 12px;
-              white-space: pre-line; font-size: 13px; line-height: 1.5; color: #f8fafc; min-width: 350px; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 16px 22px 60px 22px;
+    background: var(--bg); color: var(--text);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  }
+
+  /* 1. LIVE EXECUTION FLOATING MODAL / PROGRESS OVERLAY */
+  .live-overlay {
+    display: none;
+    position: fixed;
+    top: 16px; left: 50%;
+    transform: translateX(-50%);
+    z-index: 9999;
+    width: min(760px, 94vw);
+    background: linear-gradient(135deg, #172554 0%, #0f172a 100%);
+    border: 2px solid var(--gold);
+    border-radius: 14px;
+    padding: 16px 20px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.85);
+  }
+  .live-overlay.show { display: block; animation: slideDown 0.2s ease-out; }
+  @keyframes slideDown { from { opacity: 0; transform: translate(-50%, -16px); } to { opacity: 1; transform: translate(-50%, 0); } }
+  .spinner {
+    display: inline-block;
+    width: 18px; height: 18px;
+    border: 3px solid rgba(250,204,21,0.25);
+    border-top-color: var(--gold);
+    border-radius: 50%;
+    animation: spin 0.75s linear infinite;
+    vertical-align: middle;
+    margin-right: 8px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* TOAST NOTIFICATION */
+  .toast-container {
+    position: fixed;
+    bottom: 22px; right: 22px;
+    z-index: 9998;
+    display: flex; flex-direction: column; gap: 10px;
+    max-width: 460px;
+  }
+  .toast {
+    background: #0f172a;
+    border-left: 5px solid var(--green);
+    border-top: 1px solid #334155;
+    border-right: 1px solid #334155;
+    border-bottom: 1px solid #334155;
+    color: #fff;
+    padding: 13px 16px;
+    border-radius: 10px;
+    font-size: 13.5px;
+    line-height: 1.5;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.75);
+  }
+  .toast.error { border-left-color: var(--red); background: #1e1116; }
+
+  /* HEADER */
+  .top-header {
+    display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center;
+    background: linear-gradient(90deg, #0f172a 0%, #172036 100%);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 14px 20px;
+    margin-bottom: 14px;
+    gap: 12px;
+  }
+  .brand-title { font-size: 19px; font-weight: 800; color: var(--gold); letter-spacing: 0.3px; }
+  .brand-sub { font-size: 12.5px; color: var(--muted); margin-top: 3px; }
+  .pill-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .pill {
+    padding: 6px 12px; border-radius: 999px; font-size: 12px; font-weight: 700;
+    border: 1px solid var(--border); background: #0b1120;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+  .pill.ok { background: rgba(34,197,94,0.13); color: #4ade80; border-color: #16a34a; }
+  .pill.warn { background: rgba(250,204,21,0.13); color: #fde047; border-color: #ca8a04; }
+  .pill.err { background: rgba(239,68,68,0.13); color: #f87171; border-color: #dc2626; }
+
+  /* SMART FLOW STEPPER + COACH BANNER */
+  .flow-banner {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 14px 18px;
+    margin-bottom: 14px;
+  }
+  .stepper-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  @media (max-width: 1024px) { .stepper-grid { grid-template-columns: repeat(2, 1fr); } }
+  .step-card {
+    background: #0b111e;
+    border: 1px solid #1e293b;
+    border-radius: 10px;
+    padding: 10px 12px;
+    position: relative;
+    transition: all 0.2s;
+  }
+  .step-card.done { border-color: #16a34a; background: rgba(22,163,74,0.08); }
+  .step-card.active { border-color: var(--gold); background: rgba(250,204,21,0.1); box-shadow: 0 0 15px rgba(250,204,21,0.12); }
+  .step-num {
+    font-size: 11px; font-weight: 800; text-transform: uppercase;
+    padding: 2px 8px; border-radius: 99px; display: inline-block; margin-bottom: 4px;
+    background: #1e293b; color: #cbd5e1;
+  }
+  .step-card.done .step-num { background: #16a34a; color: #fff; }
+  .step-card.active .step-num { background: var(--gold); color: #000; }
+  .step-title { font-size: 13px; font-weight: 700; color: #f1f5f9; }
+  .step-desc { font-size: 11.5px; color: var(--muted); margin-top: 3px; line-height: 1.35; }
+
+  .smart-coach {
+    display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center;
+    background: linear-gradient(90deg, rgba(250,204,21,0.14) 0%, rgba(56,189,248,0.1) 100%);
+    border: 1px solid rgba(250,204,21,0.5);
+    border-radius: 10px;
+    padding: 10px 14px;
+    gap: 10px;
+  }
+  .coach-text { font-size: 13.5px; color: #fef08a; font-weight: 600; line-height: 1.45; }
+
+  /* LIVE FEEDBACK BAR (ALWAYS VISIBLE) */
+  .status-strip {
+    display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center;
+    background: #0a101d;
+    border: 1px solid #1e293b;
+    border-left: 4px solid var(--blue);
+    border-radius: 10px;
+    padding: 9px 14px;
+    margin-bottom: 14px;
+    font-size: 13px;
+    gap: 10px;
+  }
+
+  /* NAVIGATION TABS */
+  .tabs-nav {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 10px;
+  }
+  .tab-btn {
+    background: #111827;
+    color: #cbd5e1;
+    border: 1px solid var(--border);
+    padding: 10px 18px;
+    border-radius: 10px;
+    font-size: 13.5px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s;
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .tab-btn:hover { border-color: #475569; color: #fff; }
+  .tab-btn.active {
+    background: var(--gold);
+    color: #000;
+    border-color: var(--gold);
+    box-shadow: 0 4px 14px rgba(250,204,21,0.25);
+  }
+  .tab-badge {
+    background: rgba(0,0,0,0.2);
+    padding: 2px 7px; border-radius: 99px; font-size: 11px;
+  }
+  .tab-pane { display: none; }
+  .tab-pane.active { display: block; }
+
+  /* CARDS & GRIDS */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 16px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 16px; }
+  @media (max-width: 980px) { .grid-2, .grid-3 { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 16px;
+  }
+  .card h3 {
+    margin: 0 0 10px 0; font-size: 15px; color: #fff;
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  }
+
+  /* BUTTONS & INPUTS */
+  .btn {
+    cursor: pointer; border: none; border-radius: 9px;
+    padding: 10px 14px; font-weight: 700; font-size: 13px;
+    transition: all 0.15s; display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+    text-decoration: none;
+  }
+  .btn:disabled { opacity: 0.55; cursor: wait; }
+  .btn:hover:not(:disabled) { filter: brightness(1.08); transform: translateY(-1px); }
+  .btn-gold { background: var(--gold); color: #000; }
+  .btn-green { background: var(--green); color: #000; }
+  .btn-blue { background: var(--blue); color: #000; }
+  .btn-red { background: var(--red); color: #fff; }
+  .btn-dark { background: #1e293b; color: #f8fafc; border: 1px solid #334155; }
+  .input {
+    background: #090d16; border: 1px solid #334155; color: #fff;
+    padding: 9px 12px; border-radius: 8px; font-size: 13px; width: 100%;
+  }
+
+  /* TABLE */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { padding: 12px 10px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+  th { color: var(--muted); font-size: 11.5px; text-transform: uppercase; background: #0b111e; position: sticky; top: 0; }
+  .cap-preview {
+    background: #090d16; border: 1px solid #1e293b; border-radius: 8px;
+    padding: 9px 11px; font-size: 12.5px; color: #e2e8f0; white-space: pre-wrap; max-width: 430px; line-height: 1.45;
+  }
+  .cover-pill-preview {
+    background: #facc15; color: #000; font-weight: 800; font-size: 12px;
+    padding: 7px 10px; border-radius: 8px; text-align: center; white-space: pre-line;
+    margin-bottom: 6px; line-height: 1.35;
+  }
+  .tag-ch1 { background: rgba(56,189,248,0.15); color: #38bdf8; padding: 3px 9px; border-radius: 6px; font-weight: 700; display: inline-block; }
+  .tag-ch2 { background: rgba(168,85,247,0.18); color: #c084fc; padding: 3px 9px; border-radius: 6px; font-weight: 700; display: inline-block; }
+  .draft-badge { background: rgba(250,204,21,0.2); color: #fde047; border: 1px solid #eab308; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; display: inline-block; margin-top: 4px; }
+
+  /* SWITCH CARD IN TAB 2 */
+  .sw-card {
+    background: #0b111e; border: 1px solid var(--border); border-radius: 12px; padding: 14px;
+    display: flex; flex-direction: column; justify-content: space-between;
+  }
+  .sw-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .sw-title { font-size: 14px; font-weight: 800; color: #f8fafc; }
+  .sw-badge { font-size: 11px; font-weight: 800; padding: 3px 9px; border-radius: 99px; }
+  .sw-badge.on { background: rgba(34,197,94,0.2); color: #4ade80; border: 1px solid #16a34a; }
+  .sw-badge.off { background: rgba(239,68,68,0.2); color: #f87171; border: 1px solid #dc2626; }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <div class="header">
+
+  <!-- 1. FLOATING LIVE EXECUTION MODAL (HIỆN NGAY LẬP TỨC KHI BẤM BẤT KỲ NÚT NÀO) -->
+  <div class="live-overlay" id="liveOverlay">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+      <div style="font-size:15px;font-weight:800;color:var(--gold);">
+        <span class="spinner"></span>
+        <span id="liveTitle">Đang thực thi thao tác...</span>
+      </div>
+      <div style="background:#090d16;border:1px solid #475569;padding:3px 10px;border-radius:99px;font-size:12px;color:#38bdf8;font-weight:800;">
+        ⏱️ Đã chạy: <span id="liveTimer">0</span>s
+      </div>
+    </div>
+    <div id="liveStep" style="font-size:13px;color:#e2e8f0;margin-bottom:8px;font-weight:600;">
+      Hệ thống đang xử lý, vui lòng đợi...
+    </div>
+    <div id="liveConsole" style="background:#050811;border:1px solid #1e293b;border-radius:8px;padding:8px 10px;font-family:Consolas,monospace;font-size:11.5px;color:#4ade80;max-height:110px;overflow-y:auto;line-height:1.45;">
+    </div>
+  </div>
+
+  <!-- TOAST CONTAINER -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <!-- 2. TOP HEADER -->
+  <div class="top-header">
     <div>
-      <div class="title">⚡ TIKTOK AUTOHUB — TỰ ĐỘNG LƯU NHÁP (CAPTION TIẾNG VIỆT) & NHẮC LỊCH 1 TIẾNG / VIDEO</div>
-      <div class="sub">Chế độ Đi Ra Ngoài (Offline Cache): Tự chuyển tài khoản • Đẩy Video • Dán Caption Tiếng Việt có dấu • Bấm Lưu Nháp • Nhắc bạn chọn Sản phẩm & Đăng mỗi 1 tiếng</div>
+      <div class="brand-title">⚡ TIKTOK AUTOHUB — TRẠM KIỂM SOÁT MASTER v3.0</div>
+      <div class="brand-sub">Tự động Lưu Nháp Tiếng Việt · Đổi Sản Phẩm 1 Chạm · Điều Khiển Từ Xa Khi Đi Du Lịch & Cứu Hộ iDRAC Độc Lập</div>
     </div>
-    <div id="top-badges" class="row"></div>
+    <div class="pill-row">
+      <div class="pill warn" id="pillOppo">📱 Oppo A57: Đang kiểm tra...</div>
+      <div class="pill ok" id="pillRemoteMaster">🌍 Master Từ Xa: master.phamvuong.io.vn</div>
+      <div class="pill ok" id="pillIdrac">🛡️ Cứu Hộ iDRAC (192.168.1.11): Sẵn sàng</div>
+      <div class="pill ok" id="pillCache">📦 Kho Video: 0 bài</div>
+    </div>
   </div>
 
-  <div class="log-bar">
-    <strong>Trạng thái thực thi:</strong> <span id="last-msg">Đang tải...</span>
+  <!-- 3. SMART FULL-FLOW 4-STEP GUIDE & NEXT ACTION COACH -->
+  <div class="flow-banner">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+      <div style="font-size:13px;font-weight:800;color:#38bdf8;text-transform:uppercase;letter-spacing:0.4px;">
+        🧭 Lộ Trình Chạy Full Flow 4 Bước Chuẩn (Tự Động Đánh Dấu Theo Trạng Thái Thực Tế)
+      </div>
+      <div style="font-size:12px;color:var(--muted);">
+        Bạn chỉ cần nhìn bước nào đang sáng <b style="color:var(--gold);">MÀU VÀNG</b> và bấm theo hộp Gợi ý bên dưới!
+      </div>
+    </div>
+    <div class="stepper-grid">
+      <div class="step-card" id="stepCard1">
+        <span class="step-num" id="stepNum1">Bước 1</span>
+        <div class="step-title">1. Kết Nối Điện Thoại Oppo A57</div>
+        <div class="step-desc" id="stepDesc1">Cắm cáp USB (hoặc bật Wi-Fi ADB) để Laptop điều khiển Oppo A57 xuyên suốt.</div>
+      </div>
+      <div class="step-card" id="stepCard2">
+        <span class="step-num" id="stepNum2">Bước 2</span>
+        <div class="step-title">2. Kiểm Tra Kho Video & Sản Phẩm</div>
+        <div class="step-desc" id="stepDesc2">Kiểm tra sản phẩm bài kế tiếp. Nếu cần đổi, chọn menu Đổi Sản Phẩm để vẽ lại bìa.</div>
+      </div>
+      <div class="step-card" id="stepCard3">
+        <span class="step-num" id="stepNum3">Bước 3</span>
+        <div class="step-title">3. Tự Động Đẩy Video & Lưu Nháp</div>
+        <div class="step-desc" id="stepDesc3">Bấm nút Lưu Nháp (hoặc để tự chạy mỗi 60p): Tự chuyển kênh, dán Tiếng Việt & bấm Nháp.</div>
+      </div>
+      <div class="step-card" id="stepCard4">
+        <span class="step-num" id="stepNum4">Bước 4</span>
+        <div class="step-title">4. Mở Nháp Gắn Giỏ Hàng & Khóa Trùng</div>
+        <div class="step-desc" id="stepDesc4">Mở [Nháp] trên TikTok Oppo A57 -> Gắn sản phẩm GMV Max -> Đăng -> Bấm Đánh Dấu Đã Đăng.</div>
+      </div>
+    </div>
+
+    <!-- HỘP GỢI Ý THÔNG MINH -->
+    <div class="smart-coach">
+      <div class="coach-text" id="coachText">
+        💡 Đang phân tích trạng thái hệ thống để đưa ra gợi ý bước tiếp theo cho bạn...
+      </div>
+      <div id="coachActionBtnWrap">
+        <button class="btn btn-gold" onclick="connectOppo()">🔌 Kết Nối Oppo A57 Ngay</button>
+      </div>
+    </div>
   </div>
 
-  <!-- TRAM KIEM SOAT TONG THE: BAT / TAT BANG TAY TAT CA CHUONG TRINH (SERVER R630 + LAPTOP + OPPO A57) -->
-  <div class="card" style="margin-bottom:18px; border:2px solid #38bdf8; background:linear-gradient(135deg, #0f172a, #131b2e);">
-    <h3>🎛️ Trạm Kiểm Soát Tổng Thể — Bật / Tắt Bằng Tay Tất Cả Chương Trình (Không Cần Nhờ AI)</h3>
-    <div style="font-size:13px; color:var(--muted); margin-bottom:12px;">
-      Bạn có thể chủ động <b>BẬT / TẮT bằng tay</b> từng thành phần trên Server R630 và trên Laptop ngay tại đây (hoặc mở file <code>C:\TikTok_AutoHub\Master-Control-Station.cmd</code> khi muốn bật lại từ đầu):
+  <!-- 4. LIVE FEEDBACK STRIP -->
+  <div class="status-strip">
+    <div>
+      <strong style="color:#38bdf8;">📣 Phản hồi hệ thống mới nhất:</strong>
+      <span id="lastActionText" style="color:#f1f5f9;margin-left:6px;">Đang tải trạng thái...</span>
     </div>
-    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(290px, 1fr)); gap:12px; font-size:13px;">
-      <!-- SWITCH 1: SERVER R630 WORKER -->
-      <div style="background:#090d16; padding:12px; border-radius:10px; border:1px solid var(--border);">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-          <b>🖥️ 1. [Server R630] Worker Tự Cắt Video 24/7</b>
-          <span id="sw-r630-badge" class="badge b-ok">ĐANG BẬT</span>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <span style="font-size:12px;color:var(--muted);" id="lastActionTime">--:--:--</span>
+      <button class="btn btn-dark" style="padding:5px 10px;font-size:11.5px;" onclick="switchTab('tab4')">📜 Xem Nhật Ký Chi Tiết</button>
+    </div>
+  </div>
+
+  <!-- 5. CLEAN 4-TAB NAVIGATION -->
+  <div class="tabs-nav">
+    <button class="tab-btn active" id="btn_tab1" onclick="switchTab('tab1')">
+      🚀 1. Bảng Điều Khiển Chính & Lịch Đăng <span class="tab-badge" id="badgeQueueCount">0</span>
+    </button>
+    <button class="tab-btn" id="btn_tab2" onclick="switchTab('tab2')">
+      🌍 2. Điều Khiển Từ Xa (Khi Đi Du Lịch) & Công Tắc Bật/Tắt
+    </button>
+    <button class="tab-btn" id="btn_tab3" onclick="switchTab('tab3')">
+      🎬 3. Thu & Edit Link LiveVault Mới + Từ Điển Sản Phẩm
+    </button>
+    <button class="tab-btn" id="btn_tab4" onclick="switchTab('tab4')">
+      🛡️ 4. Sổ Cái Chống Đăng Trùng (SHA-256) & Sơ Đồ Hệ Thống
+    </button>
+  </div>
+
+  <!-- =====================================================================
+       TAB 1: BẢNG ĐIỀU KHIỂN CHÍNH & LỊCH ĐĂNG HÀNG NGÀY
+       ===================================================================== -->
+  <div class="tab-pane active" id="tab1">
+    <div class="grid-2">
+      <!-- HỘP TRÁI: KẾT NỐI OPPO A57 & CHUYỂN TÀI KHOẢN -->
+      <div class="card">
+        <h3>
+          <span>📱 Kết Nối Điện Thoại Oppo A57 & Chuyển Kênh</span>
+          <span id="oppoModeBadge" style="font-size:11.5px;color:#4ade80;font-weight:700;">--</span>
+        </h3>
+        <div id="oppoDetailBox" style="font-size:12.5px;color:#cbd5e1;background:#090d16;border:1px solid #1e293b;border-radius:8px;padding:9px 12px;margin-bottom:10px;">
+          Đang kiểm tra kết nối Oppo A57...
         </div>
-        <div style="font-size:12px; color:var(--muted); margin-bottom:10px;">
-          Chạy trên Container 240 (<code>192.168.1.240</code> / <code>tiktok.phamvuong.io.vn</code>): Tự quét LiveVault & render video mới.
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px;">
+          <button class="btn btn-gold" style="flex:1;" onclick="connectOppo(this)">
+            🔌 Tự Động Tìm & Nối Oppo A57 (USB / Wi-Fi)
+          </button>
+          <button class="btn btn-dark" onclick="testSwitch('@suckhoeviet.2', this)">
+            🔄 Chuyển @suckhoeviet.2
+          </button>
+          <button class="btn btn-dark" onclick="testSwitch('@suc.khoe.vang.268', this)">
+            🔄 Chuyển @suc.khoe.vang.268
+          </button>
         </div>
-        <div class="row">
-          <button class="btn btn-green" onclick="masterCtrl('r630_worker','start')">▶️ Bật Worker R630</button>
-          <button class="btn btn-dark" onclick="masterCtrl('r630_worker','stop')">⏹️ Tắt Worker R630</button>
-          <a class="btn btn-blue" href="https://tiktok.phamvuong.io.vn" target="_blank">🌐 Mở Web R630</a>
-        </div>
+        <details style="background:#090d16;border:1px solid #1e293b;border-radius:8px;padding:8px 12px;font-size:12px;">
+          <summary style="cursor:pointer;color:#38bdf8;font-weight:700;">
+            ⚙️ Mở Cài Đặt Kết Nối IP:Port Không Dây / Mã Ghép Nối 6 Số (Chỉ dùng khi rút cáp USB)
+          </summary>
+          <div style="margin-top:10px;display:flex;gap:8px;">
+            <input class="input" id="oppoIpPortInput" placeholder="Nhập IP:Port Gỡ lỗi không dây (vd: 192.168.1.95:41567)">
+            <button class="btn btn-green" onclick="connectOppoByIp(this)">⚡ Nối IP:Port</button>
+          </div>
+          <div style="margin-top:8px;display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+            <input class="input" id="pairIpPortInput" placeholder="IP:Port Ghép nối (vd: 192.168.1.95:38123)">
+            <input class="input" id="pairCodeInput" placeholder="Mã 6 số (vd: 652918)">
+          </div>
+          <button class="btn btn-gold" style="width:100%;margin-top:8px;" onclick="pairOppo(this)">🔗 Ghép Nối Bằng Mã 6 Số</button>
+        </details>
       </div>
 
-      <!-- SWITCH 2: LAPTOP 1H SCHEDULER -->
-      <div style="background:#090d16; padding:12px; border-radius:10px; border:1px solid var(--border);">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-          <b>💻 2. [Laptop] Bộ Nhắc Lịch & Lưu Nháp 1 Tiếng</b>
-          <span id="sw-sched-badge" class="badge b-ok">ĐANG BẬT</span>
+      <!-- HỘP PHẢI: BỘ NHẮC LỊCH 1 TIẾNG & LƯU NHÁP TỰ ĐỘNG -->
+      <div class="card">
+        <h3>
+          <span>⏰ Bộ Tự Động Lưu Nháp & Nhắc Lịch (1 Tiếng / 1 Video)</span>
+          <span id="schedBadge" style="font-size:11.5px;color:#4ade80;font-weight:700;">ĐANG BẬT</span>
+        </h3>
+        <div style="font-size:12.5px;color:var(--muted);margin-bottom:8px;">
+          Mỗi 60 phút, hệ thống tự động đẩy bài kế tiếp vào mục <b>[Nháp]</b> trên Oppo A57 (kèm Caption Tiếng Việt có dấu) và bật chuông nhắc bạn gắn sản phẩm:
         </div>
-        <div style="font-size:12px; color:var(--muted); margin-bottom:10px;">
-          Đếm ngược mỗi 60 phút để tự đẩy video sang Nháp Oppo A57 & bật chuông nhắc bạn chọn sản phẩm.
+        <div style="display:flex;align-items:center;justify-content:space-between;background:#090d16;border:1px solid #1e293b;border-radius:10px;padding:10px 14px;margin-bottom:10px;">
+          <div>
+            <div style="font-size:11.5px;color:var(--muted);">Thời gian đếm ngược tới bài tiếp theo:</div>
+            <div id="countdownBox" style="font-size:22px;font-weight:900;color:var(--gold);">--:--</div>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button class="btn btn-gold" onclick="triggerReminderNow(this)">
+              📝 Lưu Nháp Bài Tiếp Theo Ngay
+            </button>
+            <button class="btn btn-dark" id="toggleSchedBtn" onclick="toggleScheduler(this)">
+              ⏸ Tắt Tự Động 1H
+            </button>
+          </div>
         </div>
-        <div class="row">
-          <button class="btn btn-green" onclick="apiPost('/api/update_settings',{auto_scheduler_enabled:true})">▶️ Bật Hẹn Giờ 1h</button>
-          <button class="btn btn-dark" onclick="apiPost('/api/update_settings',{auto_scheduler_enabled:false})">⏹️ Tắt Hẹn Giờ 1h</button>
-        </div>
-      </div>
-
-      <!-- SWITCH 3: OPPO A57 ADB SERVICE -->
-      <div style="background:#090d16; padding:12px; border-radius:10px; border:1px solid var(--border);">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-          <b>📱 3. [Oppo A57] Dịch Vụ Cổng Kết Nối ADB</b>
-          <span id="sw-adb-badge" class="badge b-warn">KIỂM TRA</span>
-        </div>
-        <div style="font-size:12px; color:var(--muted); margin-bottom:10px;">
-          Cầu nối điều khiển điện thoại Oppo A57 (chuyển 4 tài khoản, đẩy video, dán Caption Tiếng Việt & bấm Nháp).
-        </div>
-        <div class="row">
-          <button class="btn btn-green" onclick="masterCtrl('adb_server','start')">▶️ Khởi Động Lại ADB</button>
-          <button class="btn btn-dark" onclick="masterCtrl('adb_server','stop')">⏹️ Ngắt & Tắt ADB</button>
-        </div>
-      </div>
-
-      <!-- SWITCH 4: SHUTDOWN LAPTOP HUB -->
-      <div style="background:#090d16; padding:12px; border-radius:10px; border:1px solid var(--border);">
-        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
-          <b>🛑 4. [Laptop] Trạm Điều Khiển Chính (Port 8099)</b>
-          <span class="badge b-ok">ĐANG CHẠY</span>
-        </div>
-        <div style="font-size:12px; color:var(--muted); margin-bottom:10px;">
-          Khi nghỉ làm việc, bấm nút dưới để tắt hẳn chương trình chạy ngầm trên Laptop (Mở lại bằng <code>Start-TikTok-AutoHub.cmd</code>).
-        </div>
-        <div class="row">
-          <button class="btn" style="background:#ef4444;color:#fff;width:100%;justify-content:center;" onclick="if(confirm('Bạn muốn tắt hẳn Trạm Điều Khiển trên Laptop (Port 8099)? Khi cần bật lại, chỉ cần mở file Start-TikTok-AutoHub.cmd!')) masterCtrl('laptop_hub','stop')">
-            🛑 Tắt Hẳn Chương Trình Trên Laptop
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:12px;color:#94a3b8;">
+          <span>Kho Video Offline trên Laptop: <b id="offlineReadyTxt" style="color:#4ade80;">0</b> video</span>
+          <button class="btn btn-blue" style="padding:6px 12px;font-size:12px;" onclick="syncR630(this)">
+            ☁️ Đồng Bộ Kho Video R630 Ngay
           </button>
         </div>
       </div>
     </div>
-  </div>
 
-  <!-- HOP HUONG DAN 3 BUOC TRUC QUAN TREN GIAO DIEN & CO CHE CHONG TRUNG 4 LOP -->
-  <div class="card" style="margin-bottom:18px; border:1px solid #eab308; background:linear-gradient(135deg, #161f33, #0f172a);">
-    <h3>📖 Hướng Dẫn Sử Dụng Trực Tiếp Trên Giao Diện Này (3 Bước Chuẩn & Chống Đăng Trùng Tuyệt Đối 4 Lớp)</h3>
-    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:14px; font-size:13px; line-height:1.55;">
-      <div style="background:#090d16; padding:12px; border-radius:10px; border-left:4px solid #38bdf8;">
-        <b style="color:#38bdf8;">BƯỚC 1 — Kết nối Oppo A57 (Ô số 1 bên dưới):</b><br>
-        • Khi đi ra ngoài (khác mạng R630), bạn chỉ cần <b>cắm dây cáp USB</b> từ Oppo A57 vào Laptop (hoặc bật <i>Điểm phát sóng cá nhân</i> trên Oppo A57) rồi bấm nút vàng <b>[🔌 Tự Động Tìm & Nối Oppo A57]</b>.<br>
-        • Nhìn góc phải trên cùng hiện nhãn xanh <b>📱 Oppo A57: ĐÃ KẾT NỐI</b> là sẵn sàng.
-      </div>
-      <div style="background:#090d16; padding:12px; border-radius:10px; border-left:4px solid #fde047;">
-        <b style="color:#fde047;">BƯỚC 2 — Tự Động Lưu Nháp Kèm Caption Tiếng Việt:</b><br>
-        • Ở bảng <b>Danh Sách Video Lên Lịch</b> bên dưới, bấm nút vàng <b>[📝 1. Tự Động Đẩy Video + Dán Tiếng Việt & Lưu Nháp]</b> ở bài đầu tiên (hoặc để hệ thống tự chạy mỗi 60 phút).<br>
-        • Hệ thống sẽ tự kiểm tra chống trùng, chuyển đúng kênh (<code>@suckhoeviet.2</code> / <code>@suc.khoe.vang.268</code>), đẩy duy nhất 1 video sang máy, dán <b>Caption Tiếng Việt có dấu 100%</b> và bấm <b>Lưu Nháp</b> trên TikTok!
-      </div>
-      <div style="background:#090d16; padding:12px; border-radius:10px; border-left:4px solid #22c55e;">
-        <b style="color:#4ade80;">BƯỚC 3 — Chọn Sản Phẩm Từ Nháp & Đánh Dấu Đã Đăng:</b><br>
-        • Khi Laptop đổ chuông & hiện bảng nhắc (mỗi 1 tiếng), bạn mở mục <b>[Nháp]</b> trong Hồ sơ TikTok trên Oppo A57 -> Chọn <b>Thêm liên kết (Sản phẩm GMV Max)</b> -> Bấm <b>[Đăng]</b>.<br>
-        • Đăng xong, bạn bấm ngay nút xanh <b>[✅ 2. Đánh Dấu Đã Đăng Từ Nháp]</b> trên bảng dưới để <b>xóa vĩnh viễn file video đã đăng</b>, khóa mã <code>SHA-256</code> và bắt đầu đếm ngược 60 phút cho bài kế tiếp!
-      </div>
-    </div>
-  </div>
-
-  <div class="grid">
-    <!-- CARD 1: KET NOI & GHEP NOI OPPO A57 TRUC TIEP (DAY DU NUT TU TAY BAM) -->
+    <!-- BẢNG DANH SÁCH VIDEO LÊN LỊCH -->
     <div class="card">
-      <h3>📱 1. Hộp Kết Nối & Ghép Nối Oppo A57 (Tự Tay Nhấn Kết Nối)</h3>
-      <div id="oppo-detail" style="font-size:13px; color:var(--muted); margin-bottom:10px;">Đang kiểm tra...</div>
+      <h3>
+        <span>📅 Danh Sách Video Lên Lịch (1 Tiếng / 1 Video) — Đổi Sản Phẩm 1 Chạm & Tự Động Lưu Nháp</span>
+        <span style="font-size:12px;color:var(--muted);font-weight:400;">
+          Mẹo: Nếu thấy sản phẩm chưa đúng, chọn menu <b>"🔄 Đổi đúng Sản phẩm & Render lại bìa vàng"</b> ngay tại dòng đó!
+        </span>
+      </h3>
+      <div style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:170px;">Khung Giờ & Kênh</th>
+              <th style="width:270px;">Sản Phẩm & Đổi Nhanh Bìa Vàng</th>
+              <th>Bìa Vàng Đã Đóng Lên Video & Caption Tiếng Việt Có Dấu</th>
+              <th style="width:250px;">Thao Tác Chuẩn 2 Bước</th>
+            </tr>
+          </thead>
+          <tbody id="queueBody">
+            <tr><td colspan="4" style="text-align:center;color:var(--muted);padding:24px;">Đang tải danh sách video...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
 
-      <!-- NUT 1: TU DONG TIM & NOI -->
-      <div class="row" style="margin-bottom:10px;">
-        <button class="btn btn-yellow" style="width:100%; justify-content:center; padding:11px;" onclick="connectOppo('')">
-          🔌 Tự Động Tìm & Nối Oppo A57 (USB / mDNS / Quét LAN)
-        </button>
+  <!-- =====================================================================
+       TAB 2: ĐIỀU KHIỂN TỪ XA KHI ĐI DU LỊCH & TRẠM CÔNG TẮC BẬT / TẮT
+       ===================================================================== -->
+  <div class="tab-pane" id="tab2">
+    <!-- BẢNG LINK ĐIỀU KHIỂN TỪ XA KHI ĐI DU LỊCH -->
+    <div class="card" style="margin-bottom:16px;border:2px solid #38bdf8;">
+      <h3>
+        <span style="color:#38bdf8;">🌍 Bảng Link Truy Cập Từ Xa Khi Đi Du Lịch (Host Trực Tiếp Trên Chiếc Laptop Này)</span>
+        <span id="laptopTunnelStatusBadge" style="font-size:12px;background:#166534;color:#4ade80;padding:4px 10px;border-radius:99px;">ĐANG HOẠT ĐỘNG</span>
+      </h3>
+      <div style="font-size:13px;color:#cbd5e1;margin-bottom:12px;line-height:1.5;">
+        Khi bạn đi du lịch và để <b>chiếc Laptop này ở nhà</b> cắm nguồn + nối với <b>Oppo A57</b>, chiếc Laptop này sẽ tự chạy một đường hầm Cloudflare riêng biệt (<code>tiktok-laptop-master</code>). Bạn lấy <b>bất kỳ chiếc laptop hay điện thoại nào khác</b> mở các đường link dưới đây:
+      </div>
+      <div class="grid-2" style="margin-bottom:8px;">
+        <div style="background:#090d16;border:1px solid #1e293b;border-radius:10px;padding:12px;">
+          <div style="font-size:12px;color:var(--gold);font-weight:800;margin-bottom:4px;">
+            1. ĐIỀU KHIỂN TRANG MASTER CỦA LAPTOP Ở NHÀ (TỪ LAPTOP KHÁC KHI ĐI DU LỊCH):
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:6px;">
+            <code style="font-size:14px;color:#4ade80;font-weight:800;">https://master.phamvuong.io.vn</code>
+            <div style="display:flex;gap:6px;">
+              <button class="btn btn-dark" style="padding:5px 10px;font-size:11.5px;" onclick="copyText('https://master.phamvuong.io.vn')">📋 Copy</button>
+              <a class="btn btn-blue" style="padding:5px 10px;font-size:11.5px;" href="https://master.phamvuong.io.vn" target="_blank">↗ Mở</a>
+            </div>
+          </div>
+          <div style="font-size:11.5px;color:var(--muted);margin-top:6px;">
+            Giao diện y hệt trang này! Bấm Lưu Nháp từ xa ở Đà Lạt/Hà Nội là Oppo A57 ở nhà tự mở TikTok & Lưu Nháp ngay.
+          </div>
+        </div>
+
+        <div style="background:#090d16;border:1px solid #1e293b;border-radius:10px;padding:12px;">
+          <div style="font-size:12px;color:#f87171;font-weight:800;margin-bottom:4px;">
+            2. CỨU HỘ PHẦN CỨNG iDRAC R620 (192.168.1.11 — KHÔNG QUA VM100, SERVER SẬP VẪN VÀO ĐƯỢC):
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:6px;">
+            <code style="font-size:14px;color:#fde047;font-weight:800;">https://idrac.phamvuong.io.vn</code>
+            <div style="display:flex;gap:6px;">
+              <button class="btn btn-dark" style="padding:5px 10px;font-size:11.5px;" onclick="copyText('https://idrac.phamvuong.io.vn')">📋 Copy</button>
+              <a class="btn btn-gold" style="padding:5px 10px;font-size:11.5px;" href="https://idrac.phamvuong.io.vn" target="_blank">↗ Mở iDRAC</a>
+            </div>
+          </div>
+          <div style="font-size:11.5px;color:var(--muted);margin-top:6px;">
+            Link dự phòng số 2: <a href="https://idrac-rescue.phamvuong.io.vn" target="_blank" style="color:#38bdf8;">https://idrac-rescue.phamvuong.io.vn</a> · Đi thẳng từ <b>Laptop này -> 192.168.1.11</b>. Dù Server R620/R630 hay VM100 bị treo/tắt nguồn hoàn toàn, bạn vẫn vào được iDRAC để bấm Power On / Reboot Server!
+          </div>
+        </div>
       </div>
 
-      <!-- HOP A: NOI TRUC TIEP IP:PORT (KHONG CAN MA 6 SO) -->
-      <div style="background:#090d16; border:1px solid var(--border); border-radius:10px; padding:10px 12px; margin-bottom:10px;">
-        <div style="font-size:12px; font-weight:700; color:var(--blue); margin-bottom:6px;">
-          ⚡ Cách A — Nối Trực Tiếp Bằng Địa Chỉ IP:Port (Trên màn hình Gỡ lỗi không dây):
+      <div class="grid-2" style="margin-bottom:0;">
+        <div style="background:#090d16;border:1px solid #1e293b;border-radius:10px;padding:12px;">
+          <div style="font-size:12px;color:#38bdf8;font-weight:800;margin-bottom:4px;">
+            3. CỨU HỘ PROXMOX SERVER (192.168.1.20:8006 QUA LAPTOP — KHÔNG CẦN VM100):
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:6px;">
+            <code style="font-size:13.5px;color:#38bdf8;font-weight:800;">https://pve-rescue.phamvuong.io.vn</code>
+            <div style="display:flex;gap:6px;">
+              <button class="btn btn-dark" style="padding:5px 10px;font-size:11.5px;" onclick="copyText('https://pve-rescue.phamvuong.io.vn')">📋 Copy</button>
+              <a class="btn btn-dark" style="padding:5px 10px;font-size:11.5px;" href="https://pve-rescue.phamvuong.io.vn" target="_blank">↗ Mở Proxmox</a>
+            </div>
+          </div>
         </div>
-        <div class="row" style="margin-top:4px;">
-          <input id="manual-ip" placeholder="Nhập IP:Port chính (vd: 10.110.8.99:41235)" style="flex:1; min-width:190px;">
-          <button class="btn btn-green" onclick="connectOppo(document.getElementById('manual-ip').value)">⚡ Kết Nối IP:Port</button>
-        </div>
-      </div>
 
-      <!-- HOP B: GHEP NOI BANG MA 6 SO (GIONG HET HOP TRUOC DE TU TAY NHAN) -->
-      <div style="background:#090d16; border:1px solid #eab308; border-radius:10px; padding:10px 12px;">
-        <div style="font-size:12px; font-weight:700; color:var(--accent); margin-bottom:6px;">
-          🔗 Cách B — Ghép Nối Thiết Bị Bằng Mã 6 Số (Khi đổi mạng mới cần ghép nối lại):
-        </div>
-        <div class="row" style="margin-top:4px;">
-          <input id="pair-ip" placeholder="IP:Port ghép nối (vd: 10.110.8.99:38123)" style="flex:1; min-width:170px;">
-          <input id="pair-code" placeholder="Mã 6 số (vd: 652918)" style="width:140px;">
-        </div>
-        <div class="row" style="margin-top:8px;">
-          <input id="pair-main-port" placeholder="IP:Port chính bên ngoài (tùy chọn, bỏ trống sẽ tự quét)" style="flex:1;">
-          <button class="btn btn-yellow" onclick="pairOppo()">🔗 Ghép Nối & Kết Nối Ngay</button>
+        <div style="background:#090d16;border:1px solid #1e293b;border-radius:10px;padding:12px;">
+          <div style="font-size:12px;color:#a855f7;font-weight:800;margin-bottom:4px;">
+            4. CỔNG KHO VIDEO SERVER R630 (CONTAINER 240 — 192.168.1.240:8088):
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-top:6px;">
+            <code style="font-size:13.5px;color:#c084fc;font-weight:800;">https://tiktok.phamvuong.io.vn</code>
+            <div style="display:flex;gap:6px;">
+              <button class="btn btn-dark" style="padding:5px 10px;font-size:11.5px;" onclick="copyText('https://tiktok.phamvuong.io.vn')">📋 Copy</button>
+              <a class="btn btn-dark" style="padding:5px 10px;font-size:11.5px;" href="https://tiktok.phamvuong.io.vn" target="_blank">↗ Mở R630</a>
+            </div>
+          </div>
         </div>
       </div>
     </div>
 
-    <!-- CARD 2: BO NHAC LICH DANG & TU DONG LUU NHAP MOI 1 TIENG -->
+    <!-- 5 CÔNG TẮC BẬT / TẮT THỦ CÔNG -->
     <div class="card">
-      <h3>⏰ 2. Bộ Nhắc Lịch Đăng & Tự Động Lưu Nháp (1 Tiếng / Video)</h3>
-      <div style="font-size:13px; color:var(--muted);">
-        Mỗi 60 phút, hệ thống tự động đẩy bài tiếp theo vào mục <b>[Nháp]</b> trên Oppo A57 (kèm Caption Tiếng Việt có dấu) và bật chuông + Popup nhắc bạn chọn sản phẩm & bấm Đăng:
+      <h3>🎛️ Trạm Công Tắc Bật / Tắt Toàn Bộ Chương Trình (Bật Tắt Thủ Công 1 Chạm)</h3>
+      <div class="grid-3">
+        <!-- CÔNG TẮC 1 -->
+        <div class="sw-card">
+          <div>
+            <div class="sw-head">
+              <span class="sw-title">1. Tự Lưu Nháp 1 Tiếng/Video</span>
+              <span class="sw-badge on" id="sw1_badge">ĐANG BẬT</span>
+            </div>
+            <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">
+              Chạy trên <b>Laptop này</b>: Tự động đẩy 1 video sang Oppo A57 + dán Tiếng Việt & bấm Nháp mỗi 60 phút.
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn btn-green" style="flex:1;" onclick="setSchedulerState(true, this)">▶️ BẬT</button>
+            <button class="btn btn-red" style="flex:1;" onclick="setSchedulerState(false, this)">⏹️ TẮT</button>
+          </div>
+        </div>
+
+        <!-- CÔNG TẮC 2 -->
+        <div class="sw-card">
+          <div>
+            <div class="sw-head">
+              <span class="sw-title">2. Host Từ Xa Master & iDRAC</span>
+              <span class="sw-badge on" id="sw2_badge">ĐANG BẬT</span>
+            </div>
+            <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">
+              Chạy trên <b>Laptop này</b>: Phát đường hầm <code>master.phamvuong.io.vn</code> & cứu hộ <code>idrac.phamvuong.io.vn</code> (192.168.1.11).
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn btn-green" style="flex:1;" onclick="toggleLaptopTunnel(true, this)">▶️ BẬT HOST</button>
+            <button class="btn btn-red" style="flex:1;" onclick="toggleLaptopTunnel(false, this)">⏹️ TẮT HOST</button>
+          </div>
+        </div>
+
+        <!-- CÔNG TẮC 3 -->
+        <div class="sw-card">
+          <div>
+            <div class="sw-head">
+              <span class="sw-title">3. R630 Worker Tự Cắt Video</span>
+              <span class="sw-badge on" id="sw3_badge">ĐANG BẬT</span>
+            </div>
+            <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">
+              Chạy trên <b>Server R630 (CT 240)</b>: Tự động theo dõi và cắt video mới, đóng bìa vàng 24/7.
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn btn-green" style="flex:1;" onclick="ctrlR630('tiktok-worker','start', this)">▶️ BẬT</button>
+            <button class="btn btn-red" style="flex:1;" onclick="ctrlR630('tiktok-worker','stop', this)">⏹️ TẮT</button>
+            <button class="btn btn-dark" onclick="ctrlR630('tiktok-worker','restart', this)">🔄</button>
+          </div>
+        </div>
       </div>
-      <div class="timer-box" id="countdown-timer">⏳ Đang tính thời gian...</div>
-      <div class="row">
-        <button class="btn btn-yellow" onclick="triggerReminderNow()">📝 Lưu Nháp & Nhắc Đăng Bài Tiếp Theo Ngay</button>
-        <button id="btn-toggle-sched" class="btn btn-dark" onclick="toggleScheduler()">⏸️ Tắt Nhắc Tự Động</button>
+
+      <div class="grid-2" style="margin-bottom:0;">
+        <!-- CÔNG TẮC 4 -->
+        <div class="sw-card">
+          <div>
+            <div class="sw-head">
+              <span class="sw-title">4. Cổng Web R630 (tiktok.phamvuong.io.vn)</span>
+              <span class="sw-badge on" id="sw4_badge">ĐANG BẬT</span>
+            </div>
+            <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">
+              Cổng API & Kho Video trên Server R630 phục vụ tải video về Laptop.
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn btn-blue" style="flex:1;" onclick="ctrlR630('tiktok-portal','restart', this)">🔄 Khởi Động Lại Portal R630</button>
+            <button class="btn btn-dark" style="flex:1;" onclick="ctrlR630('cloudflared-tiktok','restart', this)">☁️ Reset Tunnel R630</button>
+          </div>
+        </div>
+
+        <!-- CÔNG TẮC 5 -->
+        <div class="sw-card">
+          <div>
+            <div class="sw-head">
+              <span class="sw-title">5. ADB Oppo A57 & Tắt Toàn Bộ Trạm Laptop</span>
+              <span class="sw-badge on">CHỦ ĐỘNG</span>
+            </div>
+            <div style="font-size:12px;color:var(--muted);margin-bottom:12px;">
+              Reset kết nối ADB khi điện thoại bị đơ, hoặc tắt hẳn mọi tiến trình trên Laptop này.
+            </div>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn btn-gold" style="flex:1;" onclick="ctrlLocal('restart_adb', this)">🔄 Reset ADB Oppo A57</button>
+            <button class="btn btn-red" style="flex:1;" onclick="ctrlLocal('stop_hub', this)">🛑 TẮT HẲN TRẠM LAPTOP</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- =====================================================================
+       TAB 3: THU & EDIT LINK LIVEVAULT MỚI + THÊM SẢN PHẨM MỚI
+       ===================================================================== -->
+  <div class="tab-pane" id="tab3">
+    <div class="grid-2">
+      <div class="card">
+        <h3>🎬 Thu & Edit Loạt Video Mới Từ Link LiveVault Bác Chường</h3>
+        <div style="font-size:12.5px;color:var(--muted);margin-bottom:12px;line-height:1.5;">
+          Dán link LiveVault mới vào bên dưới. Hệ thống sẽ tải các clip highlight, dùng AI nhận diện giọng nói (hoặc gắn cứng sản phẩm bạn chọn), đóng khung bìa nền vàng chữ đen che chữ đỏ LiveVault và tạo 2 bản Unique hóa cho 2 kênh:
+        </div>
+        <div style="margin-bottom:10px;">
+          <label style="font-size:12px;color:#cbd5e1;font-weight:700;display:block;margin-bottom:4px;">1. Dán Link LiveVault Mới:</label>
+          <input class="input" id="lvUrlInput" placeholder="https://livevault.work/...">
+        </div>
+        <div class="grid-2" style="margin-bottom:12px;">
+          <div>
+            <label style="font-size:12px;color:#cbd5e1;font-weight:700;display:block;margin-bottom:4px;">2. Số lượng clip muốn cắt:</label>
+            <select class="input" id="lvMaxClips">
+              <option value="3">Cắt nhanh 3 clip đầu (Test)</option>
+              <option value="5" selected>Cắt 5 clip (Tạo 10 video cho 2 kênh)</option>
+              <option value="10">Cắt 10 clip (Tạo 20 video cho 2 kênh)</option>
+              <option value="25">Cắt toàn bộ 25 clip (Tạo 50 video)</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:12px;color:#cbd5e1;font-weight:700;display:block;margin-bottom:4px;">3. Sản phẩm áp dụng:</label>
+            <select class="input" id="lvProductKey">
+              <option value="AUTO" selected>🤖 Tự động nhận diện theo giọng nói (8 sản phẩm)</option>
+              <option value="marial_gel">Hỗn dịch dạ dày & trào ngược Marial Gel Ý (Bao tử)</option>
+              <option value="ginkgo_bonao">Viên uống dưỡng não Ginkgo Biloba Mỹ (Tiền đình)</option>
+              <option value="canxi_mason">Canxi hữu cơ Mỹ Mason Natural (Tê tay, chuột rút)</option>
+              <option value="bokhop_chondro">Viên uống bổ khớp Chondro-Aid Pháp (Đau khớp gối)</option>
+              <option value="omega3_arko">Dầu cá Omega 3 Arkopharma Pháp (Mỡ máu, khô mắt)</option>
+              <option value="vitamin_azinc">Vitamin tổng hợp Azinc 3B Pháp (Mệt mỏi, thần kinh tọa)</option>
+              <option value="collagen_chalpha">Collagen sụn khớp CH-Alpha Plus Đức (Dạng ống)</option>
+              <option value="biotin_forcapil">Viên uống dưỡng tóc Biotin Forcapil Pháp (Rụng tóc)</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn btn-green" style="width:100%;padding:13px;font-size:14px;" onclick="startBatchEdit(this)">
+          🎬 Bắt Đầu Thu & Edit Loạt Video Mới Ngay
+        </button>
+
+        <div style="margin-top:12px;background:#090d16;border:1px solid #1e293b;border-radius:10px;padding:10px 12px;">
+          <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:6px;">
+            <span id="editorStepBox" style="color:#fde047;font-weight:700;">Sẵn sàng nhận link LiveVault mới.</span>
+            <span id="editorPctBox" style="color:#4ade80;font-weight:800;">0%</span>
+          </div>
+          <div style="width:100%;height:8px;background:#1e293b;border-radius:99px;overflow:hidden;">
+            <div id="editorBar" style="width:0%;height:100%;background:linear-gradient(90deg,#facc15,#22c55e);transition:width 0.3s;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- HỘP THÊM SẢN PHẨM MỚI -->
+      <div class="card">
+        <h3>➕ Thêm Sản Phẩm Mới Vào Từ Điển Nhận Diện & Đóng Bìa Vàng</h3>
+        <div style="font-size:12.5px;color:var(--muted);margin-bottom:10px;">
+          Nếu Bác Chường lên sóng một sản phẩm hoàn toàn mới, bạn điền thông tin dưới đây để hệ thống tự động nhận diện giọng nói và đóng bìa vàng đúng chuẩn:
+        </div>
+        <div class="grid-2" style="margin-bottom:8px;">
+          <input class="input" id="cpKey" placeholder="Mã viết tắt (vd: men_visinh)">
+          <input class="input" id="cpName" placeholder="Tên đầy đủ (vd: Men vi sinh đường ruột Pháp)">
+        </div>
+        <div class="grid-2" style="margin-bottom:8px;">
+          <input class="input" id="cpTitle" placeholder="Dòng 1 bìa vàng (vd: Men Vi Sinh Đường Ruột)">
+          <input class="input" id="cpBen1" placeholder="Dòng 2 công dụng (vd: Hỗ trợ tiêu hóa, giảm đầy bụng)">
+        </div>
+        <div class="grid-2" style="margin-bottom:8px;">
+          <input class="input" id="cpBen2" placeholder="Dòng 3 triệu chứng (vd: Ăn không tiêu, rối loạn đại tràng)">
+          <input class="input" id="cpDosage" placeholder="Dòng 4 liều dùng (vd: Ngày 1-2 gói sau ăn)">
+        </div>
+        <input class="input" id="cpKeywords" placeholder="Các từ khóa Bác Chường hay nói, cách nhau dấu phẩy (vd: đại tràng, men vi sinh, tiêu hóa)" style="margin-bottom:10px;">
+        <button class="btn btn-gold" style="width:100%;" onclick="addCustomProductUI(this)">
+          ➕ Lưu Sản Phẩm Mới Vào Hệ Thống
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =====================================================================
+       TAB 4: SỔ CÁI CHỐNG ĐĂNG TRÙNG SHA-256 & NHẬT KÝ HỆ THỐNG
+       ===================================================================== -->
+  <div class="tab-pane" id="tab4">
+    <div class="grid-2">
+      <div class="card">
+        <h3>📜 Nhật Ký Thực Thi Thời Gian Thực (Live System Console)</h3>
+        <div id="fullLogConsole" style="background:#050811;border:1px solid #1e293b;border-radius:10px;padding:12px;font-family:Consolas,monospace;font-size:12px;color:#4ade80;height:260px;overflow-y:auto;line-height:1.55;">
+        </div>
+      </div>
+      <div class="card">
+        <h3>🗺️ Mô Hình Hoạt Động Khi Ở Nhà & Khi Đi Du Lịch</h3>
+        <div style="font-size:12.5px;color:#cbd5e1;line-height:1.6;">
+          <div style="background:#090d16;border-left:4px solid var(--gold);padding:8px 12px;border-radius:6px;margin-bottom:8px;">
+            <b style="color:var(--gold);">1. Chiếc Laptop này (Để ở nhà khi đi du lịch):</b><br>
+            • Cắm nguồn 24/7 + cắm cáp USB nối với điện thoại <b>Oppo A57</b>.<br>
+            • Chạy <code>Start-TikTok-AutoHub.cmd</code>: Vừa điều khiển Oppo A57 tự Lưu Nháp, vừa phát đường hầm độc lập <code>https://master.phamvuong.io.vn</code> và đường hầm cứu hộ phần cứng iDRAC <code>https://idrac.phamvuong.io.vn</code> (trỏ thẳng vào <code>192.168.1.11</code>).
+          </div>
+          <div style="background:#090d16;border-left:4px solid #38bdf8;padding:8px 12px;border-radius:6px;margin-bottom:8px;">
+            <b style="color:#38bdf8;">2. Laptop / Điện thoại mang theo khi đi du lịch:</b><br>
+            • Mở trình duyệt vào <code>https://master.phamvuong.io.vn</code> để xem lịch, đổi sản phẩm, bấm Lưu Nháp từ xa.<br>
+            • Nếu Server R620/R630 ở nhà bị cúp điện hay treo, mở <code>https://idrac.phamvuong.io.vn</code> (nhờ Laptop ở nhà vẫn sống) để vào thẳng iDRAC <code>192.168.1.11</code> bật lại nguồn Server!
+          </div>
+          <div style="background:#090d16;border-left:4px solid #22c55e;padding:8px 12px;border-radius:6px;">
+            <b style="color:#22c55e;">3. Khi nào cần bật Antigravity?</b><br>
+            • <b>KHÔNG CẦN bật Antigravity</b> khi chạy hàng ngày hay khi đi du lịch! Bạn chỉ mở Antigravity khi muốn viết thêm tính năng mới.
+          </div>
+        </div>
       </div>
     </div>
 
-    <!-- CARD 3: KHO VIDEO OFFLINE & TEST CHUYEN TAI KHOAN -->
     <div class="card">
-      <h3>📦 3. Kho Video Offline Trên Laptop & Chuyển 4 Tài Khoản</h3>
-      <div id="cache-detail" style="font-size:13px; color:var(--muted); margin-bottom:10px;">Đang kiểm tra...</div>
-      <div class="row">
-        <button class="btn btn-dark" onclick="testSwitch('@suckhoeviet.2')">🔄 Chuyển sang @suckhoeviet.2</button>
-        <button class="btn btn-dark" onclick="testSwitch('@suc.khoe.vang.268')">🔄 Chuyển sang @suc.khoe.vang.268</button>
-      </div>
-      <div class="row">
-        <button class="btn btn-blue" onclick="syncR630()">📥 Kiểm Tra / Đồng Bộ Kho Video R630</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- HANG 2: HOP THU & EDIT LOAT VIDEO MOI TU LINK LIVEVAULT + HOP KET NOI SERVER NHA TU XA (PORT 4898 / TUNNEL) -->
-  <div class="grid">
-    <!-- CARD 4: THU & EDIT TU DONG LOAT VIDEO MOI TU LINK LIVEVAULT MOI -->
-    <div class="card" style="border:1px solid #38bdf8;">
-      <h3>🎬 4. Thu, Cắt & Edit Tự Động Loạt Video Mới (Từ Link LiveVault Mới)</h3>
-      <div style="font-size:13px; color:var(--muted); margin-bottom:8px;">
-        Dán đường link thu video mới (ví dụ: <code>http://192.168.1.75:8090/d/...</code> hoặc <code>http://127.0.0.1:8090/d/...</code>). Hệ thống sẽ tự tải clip mới, lọc trùng 4 lớp, cắt bỏ đoạn cuối vi phạm, đảo Hook 3.5s, đóng khung chữ Vàng chữ Đen, viết Caption Tiếng Việt có dấu + 5 Hashtag và đưa lên <b>ĐẦU bảng lịch đăng 1 tiếng</b>:
-      </div>
-      <div class="row">
-        <input id="new-lv-url" placeholder="Dán link thu video LiveVault mới vào đây (http://...:8090/d/...)" style="flex:1; min-width:260px;">
-      </div>
-      <div class="row">
-        <select id="new-lv-count" style="background:#0b1120;border:1px solid var(--border);color:var(--text);padding:9px;border-radius:8px;font-size:13px;">
-          <option value="3">Cắt 3 clip mới nhất (= 6 video cho 2 kênh)</option>
-          <option value="5" selected>Cắt 5 clip mới nhất (= 10 video cho 2 kênh)</option>
-          <option value="10">Cắt 10 clip mới nhất (= 20 video cho 2 kênh)</option>
-          <option value="1">Chỉ cắt 1 clip trong link (?clip=...)</option>
-        </select>
-        <select id="new-lv-prod" style="background:#0b1120;border:1px solid var(--border);color:var(--text);padding:9px;border-radius:8px;font-size:13px;flex:1;">
-          <option value="AUTO">🤖 Tự nhận diện giọng nói Bác Chường (Auto AI - Đã có Marial Gel & Ginkgo)</option>
-          <option value="marial_gel">Hỗn dịch dạ dày & trào ngược Marial Gel Ý (Bao tử)</option>
-          <option value="ginkgo_bonao">Viên uống dưỡng não Ginkgo Biloba Mỹ (Tiền đình)</option>
-          <option value="vitamin_azinc">Vitamin tổng hợp Azinc Pháp (3B, Sắt, Kẽm - 120v)</option>
-          <option value="biotin_forcapil">Viên uống dưỡng tóc Forcapil Pháp (60v)</option>
-          <option value="bokhop_chondro">Viên uống Bổ Khớp Chondro-Aid Pháp</option>
-          <option value="giaidoc_gan">Viên uống Giải Độc Gan & Hạ Men Gan</option>
-        </select>
-      </div>
-      <div class="row" style="margin-top:10px;">
-        <button class="btn btn-yellow" style="width:100%;justify-content:center;padding:11px;" onclick="startFetchEditNewLink()">
-          🎬 Bắt Đầu Thu, Cắt & Edit Loạt Video Mới Đưa Lên Đầu Lịch Đăng
-        </button>
-      </div>
-      <div id="editor-status-box" style="margin-top:10px;padding:10px;background:#090d16;border-radius:8px;border:1px solid var(--border);font-size:13px;color:#4ade80;">
-        Sẵn sàng nhận link thu video mới.
-      </div>
-    </div>
-
-    <!-- CARD 5: KET NOI TU XA VE SERVER NHA (R620/R630 QUA PORT 4898 & CLOUDFLARE TUNNEL) -->
-    <div class="card" style="border:1px solid #22c55e;">
-      <h3>🌐 5. Kết Nối Từ Xa Về Server Ở Nhà (Port 4898 Đã Thoát CGNAT & Cầu Nối ssh.phamvuong.io.vn)</h3>
-      <div id="bridge-detail" style="font-size:13px; color:var(--muted); margin-bottom:10px; line-height:1.55;">
-        Đang kiểm tra trạng thái cầu nối về Server nhà...
-      </div>
-      <div class="row">
-        <button class="btn btn-green" style="width:100%;justify-content:center;padding:11px;" onclick="startRemoteBridge('')">
-          🌐 Mở Trình Duyệt Xác Thực & Bật Đường Hầm Nối Về Server Nhà (ssh.phamvuong.io.vn -> R620/R630)
-        </button>
-      </div>
-      <div class="row" style="margin-top:10px;">
-        <input id="wan-4898-input" placeholder="Hoặc nhập IP WAN hiện tại của nhà:4898 (vd: 115.77.xx.xx:4898)" style="flex:1;">
-        <button class="btn btn-blue" onclick="startRemoteBridge(document.getElementById('wan-4898-input').value)">
-          🔗 Kiểm Tra Port 4898
-        </button>
-      </div>
-      <div style="font-size:12px; color:var(--muted); margin-top:10px; line-height:1.5;">
-        • <b>Giải thích về Port 4898 của nhà bạn:</b> Router Viettel ở nhà đã thoát CGNAT và đang mở NAT <code>WAN :4898 -> 192.168.1.148:443</code>, đồng thời máy chủ nhà có sẵn đường hầm <code>ssh.phamvuong.io.vn</code>.<br>
-        • Khi bạn bấm nút xanh ở trên và bấm <b>Approve</b> trên trình duyệt, Laptop sẽ tự động lấy IP WAN mới nhất của nhà và nối thông thẳng về <b>Server R620/R630 (`192.168.1.240:8088` & Proxmox `192.168.1.20:8006`)</b>!
+      <h3>🛡️ Sổ Cái Chống Đăng Trùng 3 Lớp (Các Video Đã Đăng Từ Nháp — Khóa Cứng Mã Băm SHA-256)</h3>
+      <div style="overflow-x:auto;">
+        <table>
+          <thead>
+            <tr>
+              <th>Thời Gian Đăng</th>
+              <th>Tài Khoản</th>
+              <th>Mã Clip Gốc</th>
+              <th>Sản Phẩm</th>
+              <th>Mã Băm Video (SHA-256)</th>
+              <th>Trạng Thái</th>
+            </tr>
+          </thead>
+          <tbody id="ledgerBody"></tbody>
+        </table>
       </div>
     </div>
   </div>
-
-  <!-- BANG LICH DANG 1 TIENG / 1 VIDEO + NUT TU DONG LUU NHAP & DANH DAU DA DANG -->
-  <div class="card" style="margin-bottom:18px;">
-    <h3>📅 Danh Sách Video Lên Lịch (1 Tiếng / 1 Video) — Tự Động Lưu Nháp & Đánh Dấu Đã Đăng</h3>
-    <table>
-      <thead>
-        <tr>
-          <th style="width:185px;">Khung Giờ (Cách 1h) & Kênh</th>
-          <th style="width:240px;">Sản Phẩm Cần Chọn Khi Đăng</th>
-          <th>Caption Tiếng Việt Có Dấu + 5 Hashtag (Tự động dán vào Nháp)</th>
-          <th style="width:300px;">Thao Tác Tự Động Lưu Nháp & Đánh Dấu Đăng</th>
-        </tr>
-      </thead>
-      <tbody id="queue-tbody"></tbody>
-    </table>
-  </div>
-
-  <!-- BANG SO CAI CHONG DANG TRUNG 3 LOP -->
-  <div class="card">
-    <h3>🛡️ Sổ Cái Chống Đăng Trùng 3 Lớp (Các Video Đã Đăng Từ Nháp — Khóa Cứng SHA-256)</h3>
-    <table>
-      <thead>
-        <tr>
-          <th>Thời gian đăng</th>
-          <th>Tài khoản</th>
-          <th>Clip Gốc</th>
-          <th>Sản phẩm</th>
-          <th>Mã Băm Video (SHA-256)</th>
-          <th>Trạng thái</th>
-        </tr>
-      </thead>
-      <tbody id="ledger-tbody"></tbody>
-    </table>
-  </div>
-</div>
 
 <script>
-let currentSettings = {};
-let remainingSeconds = 3600;
-let queueMap = {};
+const PRODUCT_OPTIONS = [
+  {key: "marial_gel", label: "Hỗn dịch dạ dày & trào ngược Marial Gel Ý (Bao tử)"},
+  {key: "ginkgo_bonao", label: "Viên uống dưỡng não Ginkgo Biloba Mỹ (Tiền đình)"},
+  {key: "canxi_mason", label: "Canxi hữu cơ Mỹ Mason Natural (Tê tay chân, chuột rút)"},
+  {key: "bokhop_chondro", label: "Viên uống bổ khớp Chondro-Aid Pháp (Khô khớp, đau gối)"},
+  {key: "omega3_arko", label: "Dầu cá Omega 3 Arkopharma Pháp (Mỡ máu, khô mắt)"},
+  {key: "vitamin_azinc", label: "Vitamin tổng hợp Azinc 3B Pháp (Mệt mỏi, thần kinh tọa)"},
+  {key: "collagen_chalpha", label: "Collagen sụn khớp CH-Alpha Plus Đức (Dạng ống)"},
+  {key: "biotin_forcapil", label: "Viên uống dưỡng tóc Biotin Forcapil Pháp (Rụng tóc)"}
+];
 
-function formatMMSS(sec) {
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  return `${String(m).padStart(2, '0')} phút ${String(s).padStart(2, '0')} giây`;
+let LAST_STATE = null;
+let ACTIVE_ACTION_TIMER = null;
+let ACTION_START_EPOCH = 0;
+
+function switchTab(tabId) {
+  document.querySelectorAll('.tab-pane').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+  const pane = document.getElementById(tabId);
+  const btn = document.getElementById('btn_' + tabId);
+  if (pane) pane.classList.add('active');
+  if (btn) btn.classList.add('active');
 }
 
-setInterval(() => {
-  if (remainingSeconds > 0) remainingSeconds--;
-  const el = document.getElementById('countdown-timer');
-  if (el) {
-    el.textContent = currentSettings.auto_scheduler_enabled
-      ? `⏳ Nhắc đăng bài tiếp theo sau: ${formatMMSS(remainingSeconds)}`
-      : `⏸️ Đang tạm dừng bộ nhắc tự động`;
-  }
-}, 1000);
+function showToast(msg, isError = false) {
+  const c = document.getElementById('toastContainer');
+  const t = document.createElement('div');
+  t.className = 'toast' + (isError ? ' error' : '');
+  t.innerHTML = `<div style="font-weight:800;margin-bottom:3px;color:${isError ? '#f87171' : '#4ade80'};">
+    ${isError ? '⚠️ THÔNG BÁO / LƯU Ý' : '✅ THAO TÁC HOÀN TẤT'}
+  </div><div>${msg}</div>`;
+  c.appendChild(t);
+  setTimeout(() => { t.remove(); }, 7500);
+}
 
-async function refreshStatus() {
+function copyText(txt) {
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(txt);
+  }
+  showToast("📋 Đã copy vào bộ nhớ tạm: " + txt, false);
+}
+
+function showLiveOverlay(title, stepText) {
+  const ov = document.getElementById('liveOverlay');
+  document.getElementById('liveTitle').textContent = title;
+  document.getElementById('liveStep').textContent = stepText;
+  ov.classList.add('show');
+  ACTION_START_EPOCH = Date.now();
+  if (ACTIVE_ACTION_TIMER) clearInterval(ACTIVE_ACTION_TIMER);
+  ACTIVE_ACTION_TIMER = setInterval(async () => {
+    const sec = Math.floor((Date.now() - ACTION_START_EPOCH) / 1000);
+    document.getElementById('liveTimer').textContent = sec;
+    try {
+      const r = await fetch('/api/live_progress');
+      const p = await r.json();
+      if (p.step) document.getElementById('liveStep').textContent = p.step;
+      if (p.logs && p.logs.length) {
+        const box = document.getElementById('liveConsole');
+        box.innerHTML = p.logs.map(l => `<div>${l}</div>`).join('');
+        box.scrollTop = box.scrollHeight;
+      }
+    } catch (e) {}
+  }, 850);
+}
+
+function hideLiveOverlay() {
+  if (ACTIVE_ACTION_TIMER) {
+    clearInterval(ACTIVE_ACTION_TIMER);
+    ACTIVE_ACTION_TIMER = null;
+  }
+  document.getElementById('liveOverlay').classList.remove('show');
+}
+
+async function runAction(title, stepHint, url, payload = {}, btnEl = null) {
+  let oldHtml = null;
+  if (btnEl) {
+    oldHtml = btnEl.innerHTML;
+    btnEl.disabled = true;
+    btnEl.innerHTML = `<span class="spinner" style="width:14px;height:14px;border-width:2px;"></span> Đang xử lý...`;
+  }
+  showLiveOverlay(title, stepHint);
+  document.getElementById('lastActionText').textContent = `⏳ ${title}: ${stepHint}`;
+  try {
+    const r = await fetch(url, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload)
+    });
+    const d = await r.json();
+    hideLiveOverlay();
+    const msg = d.message || d.detail || d.last_bridge_msg || "Đã thực thi xong.";
+    const isErr = (d.ok === false) || (d.connected === false && url === '/api/connect_oppo');
+    showToast(msg, isErr);
+    await loadStatus();
+    return d;
+  } catch (err) {
+    hideLiveOverlay();
+    showToast("Không thể kết nối tới máy chủ Master: " + err, true);
+    return {ok: false};
+  } finally {
+    if (btnEl && oldHtml !== null) {
+      btnEl.disabled = false;
+      btnEl.innerHTML = oldHtml;
+    }
+  }
+}
+
+function fmtSec(s) {
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${m} phút ${sec < 10 ? '0' : ''}${sec} giây`;
+}
+
+function updateSmartFlowAndStepper(d) {
+  const oppoOk = d.runtime.oppo_status && d.runtime.oppo_status.connected;
+  const q = d.ready_queue || [];
+  const cachedCount = d.runtime.r630_sync_status.cached_offline_ready || 0;
+  const firstItem = q.length > 0 ? q[0] : null;
+  const hasDraft = q.some(x => x.status === 'SAVED_DRAFT');
+  const draftItem = q.find(x => x.status === 'SAVED_DRAFT');
+
+  // Step 1: Oppo A57
+  const s1 = document.getElementById('stepCard1');
+  const n1 = document.getElementById('stepNum1');
+  s1.className = 'step-card ' + (oppoOk ? 'done' : 'active');
+  n1.textContent = oppoOk ? '✓ Bước 1: Hoàn tất' : '👉 Bước 1: Cần làm ngay';
+  document.getElementById('stepDesc1').textContent = oppoOk
+    ? `Đã kết nối Oppo A57 (${d.runtime.oppo_status.serial} · ${d.runtime.oppo_status.mode}).`
+    : `Oppo A57 chưa kết nối. Cắm cáp USB hoặc bật Wi-Fi ADB rồi bấm Kết nối.`;
+
+  // Step 2: Kho Video
+  const s2 = document.getElementById('stepCard2');
+  const n2 = document.getElementById('stepNum2');
+  const videoOk = cachedCount > 0;
+  s2.className = 'step-card ' + (videoOk ? 'done' : (oppoOk ? 'active' : ''));
+  n2.textContent = videoOk ? `✓ Bước 2: Sẵn sàng (${cachedCount} bài)` : 'Bước 2';
+  if (firstItem) {
+    document.getElementById('stepDesc2').textContent = `Bài kế tiếp: ${firstItem.channel} — ${firstItem.product_name.split(' (Tự cắt')[0]}`;
+  }
+
+  // Step 3: Lưu Nháp
+  const s3 = document.getElementById('stepCard3');
+  const n3 = document.getElementById('stepNum3');
+  if (hasDraft) {
+    s3.className = 'step-card done';
+    n3.textContent = '✓ Bước 3: Đã Lưu Nháp';
+  } else if (oppoOk && videoOk) {
+    s3.className = 'step-card active';
+    n3.textContent = '👉 Bước 3: Sẵn sàng chạy';
+  } else {
+    s3.className = 'step-card';
+    n3.textContent = 'Bước 3';
+  }
+
+  // Step 4: Mở Nháp & Đánh dấu đã đăng
+  const s4 = document.getElementById('stepCard4');
+  const n4 = document.getElementById('stepNum4');
+  if (hasDraft) {
+    s4.className = 'step-card active';
+    n4.textContent = '👉 Bước 4: Cần xác nhận đăng';
+  } else {
+    s4.className = 'step-card';
+    n4.textContent = 'Bước 4';
+  }
+
+  // SMART COACH RECOMMENDATION
+  const coachTxt = document.getElementById('coachText');
+  const coachBtn = document.getElementById('coachActionBtnWrap');
+  if (!oppoOk) {
+    coachTxt.innerHTML = `💡 <b>GỢI Ý BƯỚC TIẾP THEO:</b> Điện thoại <b>Oppo A57</b> chưa kết nối với Laptop. Hãy cắm cáp USB (hoặc bật Gỡ lỗi không dây) rồi bấm nút bên phải:`;
+    coachBtn.innerHTML = `<button class="btn btn-gold" onclick="connectOppo(this)">🔌 Tự Động Tìm & Nối Oppo A57 Ngay</button>`;
+  } else if (hasDraft && draftItem) {
+    coachTxt.innerHTML = `💡 <b>GỢI Ý BƯỚC TIẾP THEO:</b> Video <b>${draftItem.product_name.split(' (Tự cắt')[0]}</b> đã nằm sẵn trong mục <b>[Nháp]</b> của kênh <b>${draftItem.channel}</b> trên Oppo A57! Hãy mở điện thoại gắn sản phẩm GMV Max & bấm <b>[Đăng]</b>, sau đó bấm nút xác nhận:`;
+    coachBtn.innerHTML = `<button class="btn btn-green" onclick="markPosted('${draftItem.id}', this)">✅ Xác Nhận Đã Đăng Bài ${draftItem.channel}</button>`;
+  } else if (firstItem) {
+    coachTxt.innerHTML = `💡 <b>GỢI Ý BƯỚC TIẾP THEO:</b> Mọi kết nối đã sẵn sàng! Bài tiếp theo là kênh <b>${firstItem.channel}</b> — Sản phẩm: <b>${firstItem.product_name.split(' (Tự cắt')[0]}</b>. Bấm nút bên phải để tự động đẩy video sang Oppo A57, dán Tiếng Việt & Lưu Nháp:`;
+    coachBtn.innerHTML = `<button class="btn btn-gold" onclick="saveDraftOnOppo('${firstItem.id}','${firstItem.channel}', this)">📝 Đẩy Video #1 + Dán Tiếng Việt & Lưu Nháp Ngay</button>`;
+  } else {
+    coachTxt.innerHTML = `💡 <b>GỢI Ý BƯỚC TIẾP THEO:</b> Hàng chờ hiện tại đã đăng hết. Hãy bấm sang Tab 3 để thu & edit link LiveVault mới hoặc đồng bộ từ R630:`;
+    coachBtn.innerHTML = `<button class="btn btn-blue" onclick="syncR630(this)">☁️ Đồng Bộ Kho Video R630</button>`;
+  }
+}
+
+async function loadStatus() {
   try {
     const r = await fetch('/api/status');
-    const data = await r.json();
-    currentSettings = data.settings || {};
-    remainingSeconds = data.next_wait_seconds || 0;
-    const oppo = data.runtime.oppo_status || {};
-    const r630 = data.runtime.r630_sync_status || {};
+    const d = await r.json();
+    LAST_STATE = d;
 
-    document.getElementById('last-msg').textContent =
-      `[${data.runtime.last_action_time}] ${data.runtime.last_action_result}`;
+    document.getElementById('lastActionText').textContent = d.runtime.last_action_result || 'Sẵn sàng.';
+    document.getElementById('lastActionTime').textContent = 'Cập nhật lúc ' + (d.runtime.last_action_time || '');
 
-    const badges = [];
+    // Live console in Tab 4
+    if (d.live_action && d.live_action.logs) {
+      const fc = document.getElementById('fullLogConsole');
+      fc.innerHTML = d.live_action.logs.map(l => `<div>${l}</div>`).join('');
+      fc.scrollTop = fc.scrollHeight;
+    }
+
+    // Header pills
+    const oppo = d.runtime.oppo_status || {};
+    const pOppo = document.getElementById('pillOppo');
     if (oppo.connected) {
-      badges.push(`<span class="badge b-ok">📱 Oppo A57: ĐÃ KẾT NỐI (${oppo.serial} • ${oppo.mode})</span>`);
+      pOppo.className = 'pill ok';
+      pOppo.textContent = `📱 Oppo A57: ĐÃ KẾT NỐI (${oppo.mode})`;
+      document.getElementById('oppoModeBadge').textContent = `✓ ${oppo.serial}`;
     } else {
-      badges.push(`<span class="badge b-warn">📱 Oppo A57: CHƯA KẾT NỐI TRÊN MẠNG MỚI</span>`);
+      pOppo.className = 'pill err';
+      pOppo.textContent = `📱 Oppo A57: CHƯA KẾT NỐI`;
+      document.getElementById('oppoModeBadge').textContent = `Chưa kết nối`;
     }
-    badges.push(`<span class="badge b-info">📦 Kho Offline Laptop: ${r630.cached_offline_ready || 0} Video sẵn sàng</span>`);
-    badges.push(`<span class="badge b-ok">🛡️ Đã Đăng & Khóa Chống Trùng: ${(data.ledger || []).length} Video</span>`);
-    document.getElementById('top-badges').innerHTML = badges.join('');
+    document.getElementById('oppoDetailBox').textContent = oppo.detail || '';
 
-    document.getElementById('oppo-detail').innerHTML = oppo.connected
-      ? `<span style="color:#4ade80;font-weight:700;">✓ Đã kết nối Oppo A57 (${oppo.serial})</span> — Sẵn sàng tự động Lưu Nháp!`
-      : `<span style="color:#f87171;">${oppo.detail || 'Chưa kết nối'}</span>`;
+    const pMaster = document.getElementById('pillRemoteMaster');
+    const ltActive = d.runtime.laptop_tunnel_active;
+    pMaster.className = 'pill ' + (ltActive ? 'ok' : 'warn');
+    pMaster.textContent = ltActive ? '🌍 Master Từ Xa: master.phamvuong.io.vn (ONLINE)' : '🌍 Master Từ Xa: Đang Tắt';
 
-    document.getElementById('cache-detail').innerHTML =
-      `Đang dùng Kho Video Offline trên Laptop (<code>C:\\TikTok_AutoHub\\video_cache</code>): <b>${r630.cached_offline_ready || 0}</b> video đã tải sẵn (Hoạt động độc lập không cần R630).`;
+    const pIdrac = document.getElementById('pillIdrac');
+    pIdrac.className = 'pill ' + ((ltActive && d.idrac_lan_ok) ? 'ok' : 'warn');
+    pIdrac.textContent = (ltActive && d.idrac_lan_ok)
+      ? '🛡️ Cứu Hộ iDRAC (192.168.1.11): ONLINE QUA LAPTOP'
+      : '🛡️ iDRAC 192.168.1.11: ' + (d.idrac_lan_ok ? 'LAN OK (Tunnel tắt)' : 'Kiểm tra LAN');
 
-    if (data.r630_services) {
-      const wOn = data.r630_services['tiktok-worker'];
-      const rBadge = document.getElementById('sw-r630-badge');
-      if (rBadge) {
-        rBadge.textContent = wOn ? '🟢 ĐANG BẬT' : '🔴 ĐANG TẮT';
-        rBadge.className = wOn ? 'badge b-ok' : 'badge b-warn';
-      }
+    const sync = d.runtime.r630_sync_status || {};
+    document.getElementById('pillCache').textContent = `📦 Kho Video: ${sync.cached_offline_ready || 0}/${sync.total_queue || 0} bài`;
+    document.getElementById('offlineReadyTxt').textContent = `${sync.cached_offline_ready || 0}/${sync.total_queue || 0}`;
+    document.getElementById('badgeQueueCount').textContent = (d.ready_queue || []).length;
+
+    // Scheduler countdown
+    const schedOn = d.settings.auto_scheduler_enabled;
+    document.getElementById('schedBadge').textContent = schedOn ? '✓ ĐANG BẬT TỰ ĐỘNG 1H' : '⏸ ĐANG TẠM DỪNG';
+    document.getElementById('schedBadge').style.color = schedOn ? '#4ade80' : '#facc15';
+    document.getElementById('countdownBox').textContent = schedOn ? fmtSec(d.next_wait_seconds) : 'Đang tạm dừng';
+    const tBtn = document.getElementById('toggleSchedBtn');
+    tBtn.textContent = schedOn ? '⏸ Tắt Tự Động 1H' : '▶️ Bật Tự Động 1H';
+    tBtn.dataset.enabled = schedOn ? '1' : '0';
+
+    // Tab 2 Switches
+    const sw1 = document.getElementById('sw1_badge');
+    sw1.className = 'sw-badge ' + (schedOn ? 'on' : 'off');
+    sw1.textContent = schedOn ? 'ĐANG BẬT' : 'ĐANG TẮT';
+
+    const sw2 = document.getElementById('sw2_badge');
+    sw2.className = 'sw-badge ' + (ltActive ? 'on' : 'off');
+    sw2.textContent = ltActive ? 'ĐANG BẬT' : 'ĐANG TẮT';
+    const ltBadge = document.getElementById('laptopTunnelStatusBadge');
+    ltBadge.textContent = ltActive ? '✓ ĐƯỜNG HẦM LAPTOP ĐANG BẬT' : '⏹️ ĐƯỜNG HẦM LAPTOP ĐANG TẮT';
+    ltBadge.style.background = ltActive ? '#166534' : '#7f1d1d';
+
+    if (d.r630_services) {
+      const wOn = d.r630_services['tiktok-worker'];
+      const pOn = d.r630_services['tiktok-portal'];
+      const sw3 = document.getElementById('sw3_badge');
+      sw3.className = 'sw-badge ' + (wOn ? 'on' : 'off');
+      sw3.textContent = wOn ? 'ĐANG BẬT' : 'ĐANG TẮT';
+      const sw4 = document.getElementById('sw4_badge');
+      sw4.className = 'sw-badge ' + (pOn ? 'on' : 'off');
+      sw4.textContent = pOn ? 'ĐANG BẬT' : 'ĐANG TẮT';
     }
-    const sBadge = document.getElementById('sw-sched-badge');
-    if (sBadge) {
-      sBadge.textContent = currentSettings.auto_scheduler_enabled ? '🟢 ĐANG BẬT' : '🔴 ĐANG TẮT';
-      sBadge.className = currentSettings.auto_scheduler_enabled ? 'badge b-ok' : 'badge b-warn';
-    }
-    const aBadge = document.getElementById('sw-adb-badge');
-    if (aBadge) {
-      aBadge.textContent = oppo.connected ? '🟢 ĐÃ KẾT NỐI' : '⚪ CHỜ KẾT NỐI';
-      aBadge.className = oppo.connected ? 'badge b-ok' : 'badge b-warn';
+
+    // Tab 3 Editor progress
+    if (d.editor) {
+      document.getElementById('editorStepBox').textContent = d.editor.current_step || 'Sẵn sàng';
+      document.getElementById('editorPctBox').textContent = (d.editor.progress_pct || 0) + '%';
+      document.getElementById('editorBar').style.width = (d.editor.progress_pct || 0) + '%';
     }
 
-    if (data.editor) {
-      const edBox = document.getElementById('editor-status-box');
-      if (edBox) {
-        edBox.innerHTML = data.editor.is_running
-          ? `<b style="color:#fde047;">⏳ ĐANG XỬ LÝ:</b> ${data.editor.progress_text}`
-          : `<b>Trạng thái Bộ Cắt & Edit Video Mới:</b> ${data.editor.progress_text}`;
-      }
-    }
+    // Update Smart Flow & Stepper
+    updateSmartFlowAndStepper(d);
 
-    if (data.bridge) {
-      const brBox = document.getElementById('bridge-detail');
-      if (brBox) {
-        const stBadge = data.bridge.r630_remote_reachable
-          ? `<span class="badge b-ok">✓ ĐÃ NỐI THÔNG VỀ SERVER NHÀ</span>`
-          : `<span class="badge b-warn">ĐANG Ở NGOÀI MẠNG NHÀ (CHƯA BẬT TUNNEL)</span>`;
-        brBox.innerHTML =
-          `${stBadge} &nbsp; <b>IP WAN Nhà (Port 4898):</b> <code>${data.bridge.home_wan_ip}</code><br>` +
-          `<span style="color:#38bdf8;">${data.bridge.last_bridge_msg}</span>`;
-      }
-    }
+    // Render Queue Table
+    const qb = document.getElementById('queueBody');
+    qb.innerHTML = '';
+    (d.ready_queue || []).forEach((item, idx) => {
+      const isCh1 = item.channel === '@suckhoeviet.2';
+      const isDraft = item.status === 'SAVED_DRAFT';
+      const fname = (item.output_video || '').split('/').pop();
+      const optsHtml = PRODUCT_OPTIONS.map(o =>
+        `<option value="${o.key}" ${item.product_key === o.key ? 'selected' : ''}>${o.label}</option>`
+      ).join('');
 
-    const btnSched = document.getElementById('btn-toggle-sched');
-    if (currentSettings.auto_scheduler_enabled) {
-      btnSched.textContent = '⏸️ Tắt Nhắc Tự Động (Đang bật 1 Tiếng / Video)';
-      btnSched.className = 'btn btn-dark';
+      const tr = document.createElement('tr');
+      if (idx === 0) tr.style.background = 'rgba(250,204,21,0.05)';
+      tr.innerHTML = `
+        <td>
+          <div style="font-weight:800;color:${idx===0 ? '#fde047' : '#e2e8f0'};margin-bottom:5px;">
+            ${idx===0 ? '👉 ' : ''}${item.scheduled_1h_slot}
+          </div>
+          <span class="${isCh1 ? 'tag-ch1' : 'tag-ch2'}">${item.channel}</span>
+          ${isDraft ? `<div class="draft-badge">✓ ĐÃ LƯU NHÁP TRÊN OPPO (${item.drafted_at || ''})</div>` : ''}
+          <div style="margin-top:6px;font-size:11.5px;color:${item.cached_offline ? '#4ade80' : '#f87171'};">
+            ${item.cached_offline ? '✓ Đã tải sẵn Offline trên Laptop' : '⏳ Chưa tải cache'}
+          </div>
+        </td>
+        <td>
+          <div style="font-weight:800;color:#fde047;font-size:13.5px;line-height:1.35;">${item.product_name}</div>
+          <div style="font-size:11.5px;color:#4ade80;margin-top:4px;">🛒 ${item.seller_name || 'Shop GMV Max (isAd: TRUE)'}</div>
+          <div style="margin-top:8px;background:#090d16;border:1px solid #334155;border-radius:8px;padding:6px 8px;">
+            <div style="font-size:11px;color:#38bdf8;font-weight:700;margin-bottom:4px;">🔄 Đổi sản phẩm & Vẽ lại bìa vàng:</div>
+            <select class="input" style="padding:5px 8px;font-size:11.5px;" onchange="changeItemProduct('${item.id}', this.value, this)">
+              ${optsHtml}
+            </select>
+          </div>
+        </td>
+        <td>
+          ${item.cover_text ? `<div class="cover-pill-preview">${item.cover_text}</div>` : ''}
+          <div class="cap-preview">${item.caption_seo}</div>
+          ${item.transcript ? `<details style="margin-top:6px;font-size:11.5px;color:#94a3b8;"><summary style="cursor:pointer;color:#38bdf8;">🎙️ Xem lời thoại AI nghe được từ video gốc</summary><div style="padding:6px;background:#050811;border-radius:6px;margin-top:4px;">${item.transcript}</div></details>` : ''}
+        </td>
+        <td>
+          <div style="display:flex;flex-direction:column;gap:8px;">
+            <button class="btn btn-gold" onclick="saveDraftOnOppo('${item.id}','${item.channel}', this)">
+              📝 1. Đẩy Video + Dán Tiếng Việt & Lưu Nháp
+            </button>
+            <button class="btn btn-green" onclick="markPosted('${item.id}', this)">
+              ✅ 2. Đánh Dấu Đã Đăng Từ Nháp
+            </button>
+            <div style="display:flex;gap:6px;">
+              <a class="btn btn-dark" style="flex:1;padding:6px;font-size:11.5px;" href="/video?file=${encodeURIComponent(fname)}" target="_blank">
+                👁️ Xem Thử Video
+              </a>
+              <button class="btn btn-dark" style="flex:1;padding:6px;font-size:11.5px;" onclick="copyText(${JSON.stringify(item.caption_seo)})">
+                📋 Copy Caption
+              </button>
+            </div>
+          </div>
+        </td>
+      `;
+      qb.appendChild(tr);
+    });
+
+    // Render Ledger
+    const lb = document.getElementById('ledgerBody');
+    lb.innerHTML = '';
+    if (!d.ledger || d.ledger.length === 0) {
+      lb.innerHTML = '<tr><td colspan="6" style="color:#64748b;text-align:center;padding:18px;">Chưa có video nào trong Sổ cái đã đăng.</td></tr>';
     } else {
-      btnSched.textContent = '⏰ Bật Nhắc Lịch 1 Tiếng / Video';
-      btnSched.className = 'btn btn-green';
-    }
-
-    const qt = document.getElementById('queue-tbody');
-    if (data.ready_queue && data.ready_queue.length > 0) {
-      queueMap = {};
-      qt.innerHTML = data.ready_queue.map((item, idx) => {
-        queueMap[item.id] = item;
-        const fname = (item.output_video || '').split('/').pop();
-        const isFirst = idx === 0;
-        const isDrafted = item.status === 'SAVED_DRAFT';
-        return `
-          <tr style="${isFirst ? 'background:rgba(253,224,71,0.06);' : ''}">
-            <td>
-              <div style="font-weight:800; color:${isFirst ? '#4ade80' : 'var(--blue)'}; margin-bottom:4px;">
-                ${isFirst ? '🔔 ' : '🕒 '}${item.scheduled_1h_slot}
-              </div>
-              <div style="font-size:15px; font-weight:800; color:var(--accent);">${item.channel}</div>
-              <div style="margin-top:6px;">
-                ${isDrafted
-                  ? `<span class="badge b-draft">📝 ĐÃ LƯU NHÁP TRÊN OPPO A57 (${item.drafted_at || ''})</span>`
-                  : (item.cached_offline ? '<span class="badge b-ok">✓ Sẵn sàng trong ổ C:</span>' : '<span class="badge b-warn">Chờ tải</span>')}
-              </div>
-            </td>
-            <td>
-              <b>${item.product_name}</b><br><br>
-              <span class="mono">Shop GMV Max ID:<br>${item.seller_id}</span><br>
-              <span style="font-size:11px; color:var(--muted);">File: ${fname}</span>
-              <div style="margin-top:8px; padding-top:8px; border-top:1px dashed var(--border);">
-                <div style="font-size:11px; color:#fde047; margin-bottom:4px;">🔄 Đổi đúng Sản phẩm & Render lại bìa vàng:</div>
-                <select id="psel-${item.id}" style="width:100%; font-size:12px; padding:6px; margin-bottom:5px;">
-                  <option value="marial_gel" ${item.product_key==='marial_gel'?'selected':''}>Marial Gel (Bao tử & Trào ngược)</option>
-                  <option value="ginkgo_bonao" ${item.product_key==='ginkgo_bonao'?'selected':''}>Ginkgo Biloba Mỹ (Dưỡng não & Tiền đình)</option>
-                  <option value="vitamin_azinc" ${item.product_key==='vitamin_azinc'?'selected':''}>Vitamin tổng hợp Azinc Pháp (3B, Sắt, Kẽm)</option>
-                  <option value="biotin_forcapil" ${item.product_key==='biotin_forcapil'?'selected':''}>Forcapil Pháp (Dưỡng tóc Biotin)</option>
-                  <option value="bokhop_chondro" ${item.product_key==='bokhop_chondro'?'selected':''}>Bổ Khớp Chondro-Aid Pháp</option>
-                  <option value="giaidoc_gan" ${item.product_key==='giaidoc_gan'?'selected':''}>Giải Độc Gan & Hạ Men Gan</option>
-                </select>
-                <button class="btn btn-dark" style="width:100%; justify-content:center; padding:6px; font-size:12px;" onclick="changeItemProd('${item.id}')">
-                  ✨ Áp Dụng & Đóng Lại Bìa Vàng
-                </button>
-              </div>
-            </td>
-            <td>
-              <div class="cap-card">${item.caption_seo}</div>
-            </td>
-            <td>
-              <div style="display:flex; flex-direction:column; gap:8px;">
-                ${isDrafted
-                  ? `<button class="btn btn-dark" disabled style="opacity:0.65; cursor:not-allowed; border:1px solid #eab308; color:#fde047;">
-                       🔒 Đã Khóa Nạp Lại (Đã Lưu Nháp - Chống Trùng 100%)
-                     </button>`
-                  : `<button class="btn btn-yellow" onclick="saveDraftOnOppo('${item.id}')">
-                       📝 1. Tự Động Đẩy Video + Dán Tiếng Việt & Lưu Nháp
-                     </button>`}
-                <button class="btn btn-green" onclick="markPosted('${item.id}')">
-                  ✅ 2. Đánh Dấu Đã Đăng Từ Nháp (Khóa & Xóa Video Gốc)
-                </button>
-                <button class="btn btn-blue" id="cpbtn-${item.id}" onclick="copyCap('${item.id}')">
-                  📋 Copy Caption Tiếng Việt Có Dấu
-                </button>
-              </div>
-            </td>
-          </tr>
-        `;
-      }).join('');
-    } else {
-      qt.innerHTML = '<tr><td colspan="4" style="color:var(--muted);">Không còn video nào trong hàng chờ.</td></tr>';
-    }
-
-    const lt = document.getElementById('ledger-tbody');
-    if (data.ledger && data.ledger.length > 0) {
-      lt.innerHTML = data.ledger.map(row => `
-        <tr>
-          <td><b>${row.posted_at}</b></td>
-          <td><b style="color:var(--accent);">${row.channel}</b></td>
+      d.ledger.forEach(row => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${row.posted_at}</td>
+          <td><span class="${row.channel==='@suckhoeviet.2' ? 'tag-ch1' : 'tag-ch2'}">${row.channel}</span></td>
           <td><code>${row.clip_id}</code></td>
           <td>${row.product_name}</td>
-          <td class="mono">${(row.file_sha256 || '').slice(0, 18)}...</td>
-          <td><span class="badge b-ok">✅ ĐÃ ĐĂNG & KHÓA CHỐNG TRÙNG</span></td>
-        </tr>
-      `).join('');
-    } else {
-      lt.innerHTML = '<tr><td colspan="6" style="color:var(--muted);">Chưa có video nào được đánh dấu đã đăng.</td></tr>';
+          <td><code>${row.file_sha256}</code></td>
+          <td><span style="color:#4ade80;font-weight:700;">🔒 ĐÃ KHÓA CHỐNG TRÙNG (${row.post_mode})</span></td>
+        `;
+        lb.appendChild(tr);
+      });
     }
   } catch (e) {}
 }
 
-async function apiPost(url, payload) {
-  document.getElementById('last-msg').textContent = 'Đang thực thi lệnh trên Oppo A57...';
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: {'Content-Type': 'application/json'},
-    body: JSON.stringify(payload || {})
-  });
-  const res = await r.json();
-  await refreshStatus();
-  return res;
+function connectOppo(btn) {
+  runAction("Kết nối Điện thoại Oppo A57", "Đang tự động tìm Oppo A57 qua cáp USB, mDNS và quét mạng LAN...", "/api/connect_oppo", {}, btn);
 }
-
-function copyCap(itemId) {
-  const item = queueMap[itemId];
-  if (!item) return;
-  navigator.clipboard.writeText(item.caption_seo);
-  const btn = document.getElementById('cpbtn-' + itemId);
-  if (btn) {
-    btn.textContent = '✓ Đã Copy Caption Tiếng Việt Có Dấu!';
-    setTimeout(() => { btn.textContent = '📋 Copy Caption Tiếng Việt Có Dấu'; }, 3000);
+function connectOppoByIp(btn) {
+  const val = document.getElementById('oppoIpPortInput').value.trim();
+  if (!val) { showToast("Vui lòng nhập IP:Port trên màn hình Gỡ lỗi không dây của Oppo A57!", true); return; }
+  runAction("Kết nối Oppo A57 qua IP:Port", `Đang kết nối tới ${val}...`, "/api/connect_oppo", {ip_port: val}, btn);
+}
+function pairOppo(btn) {
+  const pIp = document.getElementById('pairIpPortInput').value.trim();
+  const pCode = document.getElementById('pairCodeInput').value.trim();
+  const mIp = document.getElementById('oppoIpPortInput').value.trim();
+  if (!pIp || !pCode) { showToast("Vui lòng nhập đủ IP:Port ghép nối và Mã 6 số!", true); return; }
+  runAction("Ghép nối Oppo A57 bằng Mã 6 Số", `Đang ghép nối với ${pIp} (Mã: ${pCode})...`, "/api/pair_oppo", {pair_ip_port: pIp, pair_code: pCode, main_ip_port: mIp}, btn);
+}
+function syncR630(btn) {
+  runAction("Đồng bộ Kho Video từ Server R630", "Đang tải danh sách video mới và lưu vào bộ nhớ đệm Offline trên Laptop...", "/api/sync_r630", {}, btn);
+}
+function testSwitch(ch, btn) {
+  runAction(`Chuyển tài khoản TikTok sang ${ch}`, `Đang mở TikTok trên Oppo A57 và chuyển sang ${ch}...`, "/api/test_switch", {channel: ch}, btn);
+}
+function saveDraftOnOppo(id, ch, btn) {
+  runAction(
+    `Đẩy Video + Dán Tiếng Việt & Lưu Nháp (${ch})`,
+    `Đang chuyển kênh ${ch} -> Đẩy 1 video vào Camera -> Dán Caption Tiếng Việt có dấu -> Bấm Lưu Nháp (Mất khoảng 20-30 giây)...`,
+    "/api/save_draft_on_oppo",
+    {item_id: id, channel: ch},
+    btn
+  );
+}
+function markPosted(id, btn) {
+  runAction("Xác nhận Đã Đăng & Khóa Chống Trùng SHA-256", "Đang ghi khóa mã băm SHA-256 vào Sổ cái và xóa video tạm đã đăng...", "/api/mark_posted", {item_id: id}, btn);
+}
+function triggerReminderNow(btn) {
+  runAction("Lưu Nháp & Nhắc Đăng Bài Tiếp Theo", "Đang tự động Lưu Nháp bài đầu tiên lên Oppo A57 và bật chuông nhắc...", "/api/trigger_reminder_now", {}, btn);
+}
+function toggleScheduler(btn) {
+  const cur = btn.dataset.enabled === '1';
+  setSchedulerState(!cur, btn);
+}
+function setSchedulerState(enable, btn) {
+  runAction(
+    enable ? "Bật Tự động Lưu Nháp 1 Tiếng/Video" : "Tắt Tự động Lưu Nháp 1 Tiếng/Video",
+    "Đang cập nhật cấu hình bộ đếm ngược...",
+    "/api/toggle_scheduler",
+    {enabled: enable},
+    btn
+  );
+}
+function toggleLaptopTunnel(enable, btn) {
+  runAction(
+    enable ? "Bật Host Từ Xa Master & Cứu Hộ iDRAC (192.168.1.11)" : "Tắt Host Từ Xa Trên Laptop",
+    enable ? "Đang khởi chạy đường hầm Cloudflare tiktok-laptop-master trực tiếp trên Laptop..." : "Đang dừng đường hầm Cloudflare trên Laptop...",
+    "/api/toggle_laptop_tunnel",
+    {enable: enable},
+    btn
+  );
+}
+function ctrlR630(service, action, btn) {
+  runAction(
+    `Điều khiển Server R630 (${service} -> ${action.toUpperCase()})`,
+    `Đang gửi lệnh ${action} tới dịch vụ ${service} trên Server R630...`,
+    "/api/r630_service_control",
+    {service: service, action: action},
+    btn
+  );
+}
+function ctrlLocal(action, btn) {
+  if (action === 'stop_hub' && !confirm('Bạn có chắc muốn TẮT HẲN Trạm Kiểm Soát trên Laptop và Đường hầm Cloudflare không?')) return;
+  runAction(
+    action === 'restart_adb' ? "Reset kết nối ADB Oppo A57" : "Tắt toàn bộ Trạm Kiểm Soát Laptop",
+    "Đang thực thi lệnh hệ thống trên Laptop...",
+    "/api/local_service_control",
+    {action: action},
+    btn
+  );
+}
+function changeItemProduct(itemId, newProductKey, selectEl) {
+  runAction(
+    `Đổi sản phẩm sang "${newProductKey}" & Render lại bìa vàng`,
+    `Đang dùng FFmpeg vẽ lại hộp bìa vàng mới trên file .mp4 và cập nhật Caption Tiếng Việt chuẩn SEO...`,
+    "/api/change_item_product",
+    {item_id: itemId, product_key: newProductKey},
+    null
+  );
+}
+function startBatchEdit(btn) {
+  const url = document.getElementById('lvUrlInput').value.trim();
+  const maxC = document.getElementById('lvMaxClips').value;
+  const pKey = document.getElementById('lvProductKey').value;
+  if (!url) { showToast("Vui lòng dán link LiveVault cần thu và edit video mới!", true); return; }
+  runAction(
+    `Thu & Edit ${maxC} Clip từ LiveVault`,
+    "Đang khởi chạy tiến trình tải clip, nhận diện giọng nói và đóng bìa vàng...",
+    "/api/fetch_edit_new_link",
+    {livevault_url: url, max_clips: maxC, product_key: pKey},
+    btn
+  );
+}
+function addCustomProductUI(btn) {
+  const payload = {
+    product_key: document.getElementById('cpKey').value.trim(),
+    product_name: document.getElementById('cpName').value.trim(),
+    cover_title: document.getElementById('cpTitle').value.trim(),
+    benefit_1: document.getElementById('cpBen1').value.trim(),
+    benefit_2: document.getElementById('cpBen2').value.trim(),
+    dosage: document.getElementById('cpDosage').value.trim(),
+    keywords: document.getElementById('cpKeywords').value.trim()
+  };
+  if (!payload.product_key || !payload.product_name) {
+    showToast("Vui lòng nhập tối thiểu Mã sản phẩm và Tên sản phẩm!", true);
+    return;
   }
+  runAction("Thêm sản phẩm mới vào Từ điển", "Đang lưu sản phẩm mới...", "/api/add_custom_product", payload, btn);
 }
 
-function connectOppo(ipPort) { apiPost('/api/connect_oppo', {ip_port: ipPort}); }
-function pairOppo() {
-  apiPost('/api/pair_oppo', {
-    pair_ip_port: document.getElementById('pair-ip').value,
-    pair_code: document.getElementById('pair-code').value,
-    main_ip_port: document.getElementById('pair-main-port').value
-  });
-}
-function syncR630() { apiPost('/api/sync_r630', {}); }
-function testSwitch(ch) { apiPost('/api/test_switch', {channel: ch}); }
-function saveDraftOnOppo(itemId) { apiPost('/api/save_draft_on_oppo', {item_id: itemId}); }
-function changeItemProd(itemId) {
-  const sel = document.getElementById('psel-' + itemId);
-  if (sel) apiPost('/api/change_item_product', {item_id: itemId, product_key: sel.value});
-}
-function markPosted(itemId) { apiPost('/api/mark_posted', {item_id: itemId}); }
-function triggerReminderNow() { apiPost('/api/trigger_reminder_now', {}); }
-function masterCtrl(target, action) { apiPost('/api/master_control', {target: target, action: action}); }
-function startRemoteBridge(wanIpPort) { apiPost('/api/start_remote_bridge', {wan_ip_port: wanIpPort || ''}); }
-function startFetchEditNewLink() {
-  apiPost('/api/fetch_edit_new_link', {
-    livevault_url: document.getElementById('new-lv-url').value,
-    max_clips: parseInt(document.getElementById('new-lv-count').value || '5', 10),
-    product_key: document.getElementById('new-lv-prod').value
-  });
-}
-function toggleScheduler() {
-  apiPost('/api/update_settings', {auto_scheduler_enabled: !currentSettings.auto_scheduler_enabled});
-}
-
-refreshStatus();
-setInterval(refreshStatus, 6000);
+loadStatus();
+setInterval(loadStatus, 3000);
 </script>
 </body>
 </html>"""
 
 
-if __name__ == "__main__":
-    cfg = get_settings()
-    cfg["auto_scheduler_enabled"] = True
-    SETTINGS_FILE.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
-    print("=" * 72)
-    print(" TIKTOK AUTOHUB - AUTO-SAVE-DRAFT (VIETNAMESE) & 1H POST REMINDER")
-    print(f" Giao dien Laptop: http://127.0.0.1:{PORT}")
-    print("=" * 72)
+def main():
+    init_db()
+    # Tu dong bat luon Cloudflare Tunnel tren Laptop (master.phamvuong.io.vn & idrac.phamvuong.io.vn -> 192.168.1.11)
+    control_laptop_cloudflare_tunnel(enable=True)
+
     t = threading.Thread(target=background_scheduler_loop, daemon=True)
     t.start()
-    server = ThreadingHTTPServer(("0.0.0.0", PORT), LaptopHubHandler)
-    server.serve_forever()
+    srv = ThreadingHTTPServer(("0.0.0.0", PORT), HubHandler)
+    print("========================================================================")
+    print(" TIKTOK AUTOHUB MASTER CONTROL CENTER v3.0")
+    print(f" - Giao dien tai Laptop      : http://127.0.0.1:{PORT}")
+    print(" - Dieu khien Master Tu Xa   : https://master.phamvuong.io.vn")
+    print(" - Cuu ho iDRAC R620 (1.11)  : https://idrac.phamvuong.io.vn & https://idrac-rescue.phamvuong.io.vn")
+    print(" - Cuu ho Proxmox (1.20)     : https://pve-rescue.phamvuong.io.vn")
+    print("========================================================================")
+    srv.serve_forever()
+
+
+if __name__ == "__main__":
+    main()
