@@ -38,6 +38,7 @@ from oppo_auto_poster import (
     auto_connect_oppo,
     auto_save_draft_on_oppo,
     ensure_correct_tiktok_account,
+    ensure_laptop_hotspot_on,
     get_laptop_lan_ip,
     mark_video_as_posted,
     pair_oppo_wireless,
@@ -788,10 +789,11 @@ if __name__ == "__main__":
     cfg = get_settings()
     cfg["auto_scheduler_enabled"] = True
     SETTINGS_FILE.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+    hs = ensure_laptop_hotspot_on()
     print("=" * 72)
     print(" TIKTOK AUTOHUB - AUTO-SAVE-DRAFT (VIETNAMESE) & 1H POST REMINDER")
     print(f" Giao dien Laptop: http://127.0.0.1:{PORT}")
-    print(f" Giao dien Mobile Oppo A57 (cung LAN): http://{get_laptop_lan_ip()}:{PORT}/mobile")
+    print(f" Wi-Fi Hotspot Noi Bo Laptop: SSID='{hs.get('ssid')}' | PASS='{hs.get('password')}' ({hs.get('state')})")
     print("=" * 72)
     t = threading.Thread(target=background_scheduler_loop, daemon=True)
     t.start()

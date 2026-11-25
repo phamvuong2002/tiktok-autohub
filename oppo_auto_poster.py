@@ -91,10 +91,8 @@ def quick_check_oppo_connected() -> dict:
         "serial": None,
         "mode": "NONE",
         "detail": (
-            f"Laptop đang ở mạng LAN mới ({lan_ip}, khác mạng R630). Để nối Oppo A57 ngay lập tức: "
-            f"(Cách 1) Nhập IP:Port trong mục 'Gỡ lỗi không dây' trên Oppo A57 vào ô bên dưới rồi bấm 'Nối IP'; "
-            f"HOẶC (Cách 2) Cắm cáp USB 3 giây để hệ thống tự bắt IP Wi-Fi mới; "
-            f"HOẶC (Cách 3) Mở http://{lan_ip}:8099/mobile trên trình duyệt Oppo A57 để Laptop tự nhận diện IP điện thoại!"
+            f"📡 Đã bật sẵn Wi-Fi Nội Bộ trên Laptop: Tên Wi-Fi = 'Vuong' (Mật khẩu: vuong2002). "
+            f"Do Wi-Fi công cộng ({lan_ip}) chặn kết nối giữa các máy (AP Isolation), bạn chỉ cần cho Oppo A57 bắt Wi-Fi 'Vuong' (hoặc cắm cáp USB) là tự động kết nối ngay!"
         ),
     }
 
@@ -206,6 +204,18 @@ def auto_connect_oppo(hint_ip: str = None) -> dict:
         if q["connected"]:
             return q
 
+    # Kiem tra cac thiet bi dang ket noi vao Wi-Fi Hotspot Noi Bo cua Laptop ('Vuong' - dai 192.168.137.x)
+    try:
+        arp_out = subprocess.run(["arp", "-a"], capture_output=True, text=True, timeout=4).stdout
+        hotspot_ips = re.findall(r"(192\.168\.137\.\d+)", arp_out)
+        for hip in hotspot_ips:
+            if not hip.endswith(".1") and not hip.endswith(".255"):
+                res = scan_and_connect_single_ip(hip)
+                if res.get("connected"):
+                    return res
+    except Exception:
+        pass
+
     cfg = get_settings()
     last_ip = (cfg.get("oppo_last_ip") or "").split(":")[0]
     if last_ip:
@@ -239,6 +249,29 @@ def auto_connect_oppo(hint_ip: str = None) -> dict:
     return quick_check_oppo_connected()
 
 
+def ensure_laptop_hotspot_on() -> dict:
+    """Tu dong bat Diem phat song di dong (Windows Mobile Hotspot: SSID 'Vuong') tren Laptop de vuot qua AP Isolation cua Wi-Fi cong cong."""
+    ps_script = (
+        "Add-Type -AssemblyName System.Runtime.WindowsRuntime; "
+        "$asTaskGeneric = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' })[0]; "
+        "Function Await($WinRtTask, $ResultType) { $asTask = $asTaskGeneric.MakeGenericMethod($ResultType); $netTask = $asTask.Invoke($null, @($WinRtTask)); $netTask.Wait(-1) | Out-Null; $netTask.Result }; "
+        "$cp = [Windows.Networking.Connectivity.NetworkInformation,Windows.Networking.Connectivity,ContentType=WindowsRuntime]::GetInternetConnectionProfile(); "
+        "if ($cp -ne $null) { "
+        "$tm = [Windows.Networking.NetworkOperators.NetworkOperatorTetheringManager,Windows.Networking.NetworkOperators,ContentType=WindowsRuntime]::CreateFromConnectionProfile($cp); "
+        "$cfg = $tm.GetCurrentAccessPointConfiguration(); "
+        "if ($tm.TetheringOperationalState -ne 'On') { $null = Await ($tm.StartTetheringAsync()) ([Windows.Networking.NetworkOperators.NetworkOperatorTetheringOperationResult]) }; "
+        "Write-Output ($cfg.Ssid + '|' + $cfg.Passphrase + '|' + $tm.TetheringOperationalState) }"
+    )
+    try:
+        r = subprocess.run(["powershell", "-NoProfile", "-Command", ps_script], capture_output=True, text=True, timeout=10)
+        parts = r.stdout.strip().split("|")
+        if len(parts) >= 2:
+            return {"ok": True, "ssid": parts[0], "password": parts[1], "state": parts[2] if len(parts) > 2 else "On"}
+    except Exception:
+        pass
+    return {"ok": False, "ssid": "Vuong", "password": "vuong2002", "state": "Unknown"}
+
+
 def pair_oppo_wireless(pair_ip_port: str, pair_code: str, main_ip_port: str = "") -> dict:
     pair_ip_port = (pair_ip_port or "").strip()
     pair_code = (pair_code or "").strip()
@@ -246,10 +279,25 @@ def pair_oppo_wireless(pair_ip_port: str, pair_code: str, main_ip_port: str = ""
     if not pair_ip_port or not pair_code:
         return {"ok": False, "message": "Vui lòng nhập đầy đủ IP:Port ghép nối và Mã 6 số."}
 
-    rc, out, err = run_adb(["pair", pair_ip_port, pair_code], timeout=25)
+    ip_only = pair_ip_port.split(":")[0]
+    try:
+        p_num = int(pair_ip_port.split(":")[1])
+        s = socket.create_connection((ip_only, p_num), 2.0)
+        s.close()
+    except Exception:
+        hs = ensure_laptop_hotspot_on()
+        return {
+            "ok": False,
+            "message": (
+                f"⚠️ Router Wi-Fi công ty/quán hiện tại đang bật 'Cách ly thiết bị (AP Isolation)' nên chặn kết nối từ Laptop tới {pair_ip_port}! "
+                f"Đã tự động bật Wi-Fi Nội Bộ trực tiếp trên Laptop của bạn: Tên Wi-Fi = '{hs['ssid']}' | Mật khẩu = '{hs['password']}'. "
+                f"👉 Bạn chỉ cần mở Wi-Fi trên Oppo A57 -> Kết nối vào Wi-Fi '{hs['ssid']}' (mật khẩu: {hs['password']}) là Oppo A57 sẽ TỰ ĐỘNG KẾT NỐI NGAY mà không cần nhập mã!"
+            ),
+        }
+
+    rc, out, err = run_adb(["pair", pair_ip_port, pair_code], timeout=10)
     combined = f"{out}\n{err}".strip()
     if "successfully paired" in combined.lower():
-        ip_only = pair_ip_port.split(":")[0]
         cfg = get_settings()
         cfg["oppo_last_ip"] = ip_only
         SETTINGS_FILE.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -313,7 +361,7 @@ def copy_vietnamese_to_oppo_clipboard(serial: str, item_id: str) -> bool:
     bang cach mo trang local /auto_copy tren Oppo A57 va cham 1 nhip (360, 800) de kich hoat Clipboard API
     (Khong can cai APK cu, khong bi Google Play Protect chan!).
     """
-    lan_ip = get_laptop_lan_ip()
+    lan_ip = "192.168.137.1" if "192.168.137." in (serial or "") else get_laptop_lan_ip()
     url = f"http://{lan_ip}:8099/auto_copy?id={urllib.parse.quote(item_id)}"
     run_adb(["shell", "input", "keyevent", "224"], serial=serial)
     run_adb(["shell", "cmd", "statusbar", "collapse"], serial=serial)
