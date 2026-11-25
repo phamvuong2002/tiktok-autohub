@@ -55,9 +55,94 @@ from local_video_editor import (
 )
 
 PORT = 8099
+IDRAC_PROXY_PORT = 8098
+IDRAC_HOST = "192.168.1.11"
 CLOUDFLARED_EXE = r"C:\Program Files (x86)\cloudflared\cloudflared.exe"
 LAPTOP_CF_CONFIG = DATA_DIR / "cloudflared" / "config.yml"
 LAPTOP_CF_PROC = None
+
+
+class IdracRescueProxyHandler(BaseHTTPRequestHandler):
+    """
+    Cau noi TLSv1.2 (DHE-RSA-AES256-GCM-SHA384) truc tiep tu Laptop (127.0.0.1:8098)
+    sang Dell iDRAC7 R620 (https://192.168.1.11:443):
+    - Khac phuc loi Go cloudflared khong ho tro cipher DHE cua iDRAC7.
+    - Tu dong chuyen Location: https://192.168.1.11/... thanh duong dan tuong doi /...
+      de khi di du lich truy cap qua https://idrac.phamvuong.io.vn khong bi vang ve IP LAN 192.168.1.11!
+    """
+    def log_message(self, format, *args):
+        return
+
+    def _proxy_to_idrac(self):
+        import http.client
+        import ssl
+        ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+        ctx.maximum_version = ssl.TLSVersion.TLSv1_2
+        ctx.set_ciphers("ALL:@SECLEVEL=0")
+
+        length = int(self.headers.get("Content-Length", "0") or "0")
+        body = self.rfile.read(length) if length > 0 else None
+
+        fwd_headers = {}
+        for k, v in self.headers.items():
+            kl = k.lower()
+            if kl in ("host", "origin", "referer", "connection", "transfer-encoding"):
+                continue
+            fwd_headers[k] = v
+        fwd_headers["Host"] = IDRAC_HOST
+        fwd_headers["Origin"] = f"https://{IDRAC_HOST}"
+        fwd_headers["Referer"] = f"https://{IDRAC_HOST}/start.html"
+        if "Accept-Encoding" not in fwd_headers and "accept-encoding" not in {x.lower() for x in fwd_headers}:
+            fwd_headers["Accept-Encoding"] = "gzip, deflate"
+
+        path = self.path or "/"
+        if path == "/":
+            path = "/start.html"
+
+        try:
+            conn = http.client.HTTPSConnection(IDRAC_HOST, 443, context=ctx, timeout=15)
+            conn.request(self.command, path, body=body, headers=fwd_headers)
+            resp = conn.getresponse()
+            data = resp.read()
+
+            self.send_response(resp.status)
+            for hk, hv in resp.getheaders():
+                hkl = hk.lower()
+                if hkl in ("transfer-encoding", "connection", "content-length", "strict-transport-security"):
+                    continue
+                if hkl == "location":
+                    hv = hv.replace(f"https://{IDRAC_HOST}", "").replace(f"http://{IDRAC_HOST}", "")
+                    if not hv.startswith("/"):
+                        hv = "/" + hv
+                self.send_header(hk, hv)
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+            conn.close()
+        except Exception as e:
+            err_html = f"<h3>Không thể kết nối tới iDRAC {IDRAC_HOST}: {e}</h3>".encode("utf-8")
+            self.send_response(502)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(err_html)))
+            self.end_headers()
+            self.wfile.write(err_html)
+
+    def do_GET(self):
+        self._proxy_to_idrac()
+
+    def do_POST(self):
+        self._proxy_to_idrac()
+
+    def do_PUT(self):
+        self._proxy_to_idrac()
+
+    def do_DELETE(self):
+        self._proxy_to_idrac()
+
+    def do_HEAD(self):
+        self._proxy_to_idrac()
 
 RUNTIME_STATE = {
     "last_action_time": datetime.now().strftime("%H:%M:%S"),
@@ -1938,6 +2023,13 @@ setInterval(loadStatus, 3000);
 
 def main():
     init_db()
+    # Khoi chay local TLSv1.2 Rescue Proxy (127.0.0.1:8098 -> https://192.168.1.11:443) cho Dell iDRAC7 R620
+    try:
+        idrac_srv = ThreadingHTTPServer(("127.0.0.1", IDRAC_PROXY_PORT), IdracRescueProxyHandler)
+        threading.Thread(target=idrac_srv.serve_forever, daemon=True).start()
+    except Exception as e:
+        print("Cảnh báo cổng iDRAC Proxy 8098:", e)
+
     # Tu dong bat luon Cloudflare Tunnel tren Laptop (master.phamvuong.io.vn & idrac.phamvuong.io.vn -> 192.168.1.11)
     control_laptop_cloudflare_tunnel(enable=True)
 
