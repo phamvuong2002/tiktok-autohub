@@ -148,10 +148,7 @@ def background_scheduler_loop():
     while True:
         try:
             now = time.time()
-            # Tu dong kiem tra neu nguoi dung vua cam cap USB -> Tu bat IP Wi-Fi moi va mo cong 5555!
-            q = quick_check_oppo_connected()
-            if q.get("connected") and q.get("mode") == "USB":
-                RUNTIME_STATE["oppo_status"] = auto_connect_oppo()
+            RUNTIME_STATE["oppo_status"] = quick_check_oppo_connected()
 
             if now - last_sync_ts >= 180:
                 RUNTIME_STATE["r630_sync_status"] = sync_from_r630_to_laptop_cache()

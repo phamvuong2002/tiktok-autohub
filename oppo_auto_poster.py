@@ -197,25 +197,15 @@ def auto_connect_oppo(hint_ip: str = None) -> dict:
         if "device " in ln:
             serial = ln.split()[0]
             is_physical_usb = (":" not in serial) and ("_adb-tls-connect" not in serial)
+            # Mo duong ham ADB Reverse (tcp:8099 -> tcp:8099) de http://127.0.0.1:8099 chay truc tiep tren Oppo A57 qua cap USB/ADB!
+            run_adb(["reverse", "tcp:8099", "tcp:8099"], serial=serial)
             if is_physical_usb:
-                # Doc luon IP Wi-Fi hien tai cua Oppo A57 tren mang LAN moi va mo cong 5555
-                _, ip_out, _ = run_adb(["shell", "ip", "-f", "inet", "addr", "show", "wlan0"], serial=serial)
-                m = re.search(r"inet\s+(\d+\.\d+\.\d+\.\d+)", ip_out)
-                run_adb(["tcpip", "5555"], serial=serial)
-                if m:
-                    wlan_ip = m.group(1)
-                    cfg = get_settings()
-                    cfg["oppo_last_ip"] = wlan_ip
-                    SETTINGS_FILE.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
-                    time.sleep(1.2)
-                    run_adb(["connect", f"{wlan_ip}:5555"])
-                    return {
-                        "connected": True,
-                        "serial": f"{wlan_ip}:5555",
-                        "mode": "USB_TO_WIFI_5555",
-                        "detail": f"Đã tự động bắt IP Wi-Fi mới ({wlan_ip}:5555) qua cáp USB! Bạn có thể rút cáp USB ra được rồi.",
-                    }
-                return {"connected": True, "serial": serial, "mode": "USB", "detail": ln}
+                return {
+                    "connected": True,
+                    "serial": serial,
+                    "mode": "USB_DIRECT",
+                    "detail": f"✓ Đã kết nối trực tiếp Oppo A57 qua cáp USB ({serial})",
+                }
             elif "_adb-tls-connect" in serial:
                 return {"connected": True, "serial": serial, "mode": "WIFI_MDNS_AUTO", "detail": ln}
             else:
@@ -412,15 +402,14 @@ def has_captcha_on_screen(nodes: list[dict]) -> bool:
 def copy_vietnamese_to_oppo_clipboard(serial: str, item_id: str) -> bool:
     """
     Nap 100% Caption Tieng Viet CO DAU + 5 Hashtag vao Clipboard he thong cua Oppo A57
-    bang cach mo trang local /auto_copy tren Oppo A57 va cham 1 nhip (360, 800) de kich hoat Clipboard API
-    (Khong can cai APK cu, khong bi Google Play Protect chan!).
+    qua duong ham ADB Reverse (http://127.0.0.1:8099/auto_copy) -> Khong phu thuoc Wi-Fi truong/quan cafe!
     """
-    lan_ip = "192.168.137.1" if "192.168.137." in (serial or "") else get_laptop_lan_ip()
-    url = f"http://{lan_ip}:8099/auto_copy?id={urllib.parse.quote(item_id)}"
+    run_adb(["reverse", "tcp:8099", "tcp:8099"], serial=serial)
+    url = f"http://127.0.0.1:8099/auto_copy?id={urllib.parse.quote(item_id)}"
     run_adb(["shell", "input", "keyevent", "224"], serial=serial)
     run_adb(["shell", "cmd", "statusbar", "collapse"], serial=serial)
     run_adb(["shell", "am", "start", "-a", "android.intent.action.VIEW", "-d", url], serial=serial)
-    time.sleep(2.2)
+    time.sleep(2.4)
     # Cham giua man hinh (360, 800) tren nut Full-Screen de Chrome copy 100% Unicode Tieng Viet vao Clipboard Android!
     run_adb(["shell", "input", "tap", "360", "800"], serial=serial)
     time.sleep(0.8)
@@ -467,6 +456,23 @@ def ensure_correct_tiktok_account(serial: str, target_handle: str) -> tuple[bool
     time.sleep(2.4)
 
     sheet_nodes = dump_oppo_ui(serial)
+    sheet_blob = " ".join((n["text"] + " " + n["desc"]).lower() for n in sheet_nodes)
+    # Neu man hinh hien tai da la trang Ho so cua dung @clean_handle -> Xac nhan thanh cong ngay!
+    if f"@{clean_handle}" in sheet_blob:
+        return True, f"✓ Đã xác nhận Oppo A57 đang ở đúng tài khoản @{clean_handle}"
+
+    # Neu bang 'Chuyển đổi tài khoản' chua mo ra (do cu cham truoc vua dong popup), cham lai tab Ho so -> cham id/tjz (250, 231)
+    if "chuyển đổi tài khoản" not in sheet_blob:
+        run_adb(["shell", "input", "tap", "648", "1563"], serial=serial)
+        time.sleep(2.0)
+        p_nodes = dump_oppo_ui(serial)
+        p_blob = " ".join((n["text"] + " " + n["desc"]).lower() for n in p_nodes)
+        if f"@{clean_handle}" in p_blob:
+            return True, f"✓ Đã xác nhận Oppo A57 đang ở đúng tài khoản @{clean_handle}"
+        run_adb(["shell", "input", "tap", "250", "231"], serial=serial)
+        time.sleep(2.4)
+        sheet_nodes = dump_oppo_ui(serial)
+
     target_node = None
     for n in sheet_nodes:
         combined = (n["text"] + " " + n["desc"]).lower()
@@ -580,47 +586,48 @@ def auto_save_draft_on_oppo(item_id: str = None, channel: str = None) -> dict:
     if has_captcha_on_screen(nodes):
         return {"ok": False, "step": "CAPTCHA_PAUSE", "message": "TikTok hiện CAPTCHA trên Oppo A57. Vui lòng kéo xác thực trên màn hình điện thoại."}
 
+    # Truong hop 1: Neu TikTok mo vao tab TẠO (co nut 'Video mới' id/q7u tai 266, 444) -> Bam 'Video mới' (266, 444) -> Chon o video #1 (360, 380)
+    video_moi_btn = next((n for n in nodes if n["id"].endswith(":id/q7u") or n["text"] == "Video mới"), None)
     has_upload_area = any(n["id"].endswith(":id/upload_hot_area") or n["id"].endswith(":id/d9o") for n in nodes)
-    if has_upload_area:
+
+    if video_moi_btn:
+        cx = video_moi_btn["cx"] if video_moi_btn["cx"] > 0 else 266
+        cy = video_moi_btn["cy"] if video_moi_btn["cy"] > 0 else 444
+        run_adb(["shell", "input", "tap", str(cx), str(cy)], serial=serial)
+        time.sleep(2.5)
+        run_adb(["shell", "input", "tap", "360", "380"], serial=serial)
+    elif has_upload_area:
+        # Truong hop 2: Man hinh Camera -> Bam upload_hot_area (80, 1544) -> Chon o #1 (121, 371)
         run_adb(["shell", "input", "tap", "80", "1544"], serial=serial)
         time.sleep(2.5)
         run_adb(["shell", "input", "tap", "121", "371"], serial=serial)
     else:
-        has_camera_tile = any(n["text"] == "Máy ảnh" or n["desc"] == "Camera" for n in nodes)
-        if has_camera_tile:
-            run_adb(["shell", "input", "tap", "360", "380"], serial=serial)
-        else:
-            run_adb(["shell", "input", "tap", "121", "371"], serial=serial)
-    time.sleep(3.0)
+        # Truong hop 3: Tab ĐĂNG (o #1 la Máy ảnh 121,341 -> Video #1 nam o o #2: 360, 380)
+        run_adb(["shell", "input", "tap", "360", "380"], serial=serial)
+    time.sleep(3.5)
 
-    # 6. Bam 'Tiếp' qua man hinh Preview & Editor de sang trang Soan Mo Ta / Luu Nhap
-    for _ in range(2):
-        ed_nodes = dump_oppo_ui(serial)
-        if any(n["id"].endswith(":id/hgl") or "mô tả" in n["text"].lower() or n["id"].endswith(":id/gqm") for n in ed_nodes):
-            break
-        next_btn = next((n for n in ed_nodes if n["text"] in ["Tiếp", "Next"] or n["id"].endswith(":id/qac") or n["id"].endswith(":id/qa4")), None)
-        if next_btn and next_btn["cx"] > 0:
-            run_adb(["shell", "input", "tap", str(next_btn["cx"]), str(next_btn["cy"])], serial=serial)
-        else:
-            run_adb(["shell", "input", "tap", "532", "1546"], serial=serial)
+    # 6. Tren man hinh Editor (video dang phat 30fps nen KHONG goi uiautomator dump de tranh bi cho 10s idle!):
+    # Bam thang nut 'Tiếp' (532, 1546) de sang trang Soan Mo Ta / Luu Nhap tinh!
+    run_adb(["shell", "input", "tap", "532", "1546"], serial=serial)
+    time.sleep(3.5)
+
+    # Kiem tra xem da sang trang Soan Mo Ta (co id/hgl hoac id/gqm) chua; neu con o Editor thi bam 'Tiếp' (532, 1546) lan nua
+    post_check = dump_oppo_ui(serial)
+    if not any(n["id"].endswith(":id/hgl") or n["id"].endswith(":id/gqm") or "mô tả" in n["text"].lower() for n in post_check):
+        run_adb(["shell", "input", "tap", "532", "1546"], serial=serial)
         time.sleep(3.2)
 
     # 7. Cham vao o 'Thêm mô tả...' (221, 324) va DAN (KEYCODE_PASTE = 279) Caption Tieng Viet CO DAU 100%!
     run_adb(["shell", "input", "tap", "221", "324"], serial=serial)
     time.sleep(1.2)
     run_adb(["shell", "input", "keyevent", "279"], serial=serial)  # KEYCODE_PASTE (Dan 100% Tieng Viet co dau tu Clipboard!)
-    time.sleep(1.2)
+    time.sleep(1.4)
     # Dong ban phim / bang goi y hashtag de hien nut 'Nháp' (188, 1540)
     run_adb(["shell", "input", "keyevent", "4"], serial=serial)
     time.sleep(1.2)
 
-    # 8. Tim va bam nut 'Nháp' (com.ss.android.ugc.trill:id/gqm tai 188, 1540)
-    post_nodes = dump_oppo_ui(serial)
-    draft_btn = next((n for n in post_nodes if n["id"].endswith(":id/gqm") or n["text"] in ["Nháp", "Drafts", "Lưu nháp"]), None)
-    if draft_btn and draft_btn["cx"] > 0:
-        run_adb(["shell", "input", "tap", str(draft_btn["cx"]), str(draft_btn["cy"])], serial=serial)
-    else:
-        run_adb(["shell", "input", "tap", "188", "1540"], serial=serial)
+    # 8. Bam nut 'Nháp' (com.ss.android.ugc.trill:id/gqm tai 188, 1540)
+    run_adb(["shell", "input", "tap", "188", "1540"], serial=serial)
     time.sleep(2.5)
 
     # Cap nhat trang thai 'SAVED_DRAFT' trong local_queue.json
