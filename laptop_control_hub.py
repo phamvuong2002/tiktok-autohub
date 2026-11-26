@@ -683,10 +683,9 @@ class HubHandler(BaseHTTPRequestHandler):
             cfg = get_settings()
             r630_base = cfg.get("r630_url", "https://tiktok.phamvuong.io.vn").rstrip("/")
             try:
-                req_data = json.dumps({"service": svc, "action": act}).encode("utf-8")
                 req = urllib.request.Request(
-                    f"{r630_base}/api/r630_service_control",
-                    data=req_data,
+                    f"{r630_base}/api/r630_service?action={urllib.parse.quote(act)}&service={urllib.parse.quote(svc)}",
+                    data=b"{}",
                     headers={"Content-Type": "application/json", "User-Agent": "TikTok-AutoHub/3.0"},
                     method="POST",
                 )
