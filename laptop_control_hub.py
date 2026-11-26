@@ -1146,6 +1146,52 @@ function copyViet() {{
        TAB 1: BẢNG ĐIỀU KHIỂN CHÍNH & LỊCH ĐĂNG HÀNG NGÀY
        ===================================================================== -->
   <div class="tab-pane active" id="tab1">
+    <!-- HỘP DÁN LINK THU & CHẠY TỰ ĐỘNG TOÀN TRÌNH NGAY ĐẦU TAB 1 -->
+    <div class="card" style="margin-bottom:14px;border:2px solid var(--gold);background:linear-gradient(135deg, #101726 0%, #172036 100%);">
+      <h3>
+        <span style="color:var(--gold);font-size:16px;">🚀 Dán Link Thu Vào Đây Để Chạy Tự Động Toàn Trình (Thu -> Cắt Bìa Vàng -> Lên Lịch -> Đẩy Lưu Nháp Oppo A57)</span>
+        <span id="quickEditorPct" style="font-size:13px;background:#166534;color:#4ade80;padding:3px 10px;border-radius:99px;font-weight:800;">SẴN SÀNG</span>
+      </h3>
+      <div style="font-size:12.5px;color:#cbd5e1;margin-bottom:10px;line-height:1.45;">
+        Bạn chỉ cần dán <b>Link Thu LiveVault</b> (vd: <code>http://192.168.1.75:8090/d/...</code>) hoặc <b>Link Livestream TikTok</b> (<code>https://www.tiktok.com/@.../live</code>) vào ô bên dưới rồi bấm nút, hoặc bấm <b>"⚡ Tự Lấy Phiên Ghi Mới Nhất Trong Máy"</b> — mọi bước từ nhận diện giọng nói 8 sản phẩm, đóng bìa vàng 2 kênh, đưa lên đầu lịch đến tự đẩy sang Oppo A57 & Lưu Nháp Tiếng Việt sẽ tự chạy 100%:
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px;">
+        <input class="input" id="quickLvUrlInput" style="flex:2.4;min-width:260px;border-color:var(--gold);font-size:13.5px;" placeholder="Dán link thu (http://...:8090/d/... hoặc link TikTok Live)... Bỏ trống để tự lấy phiên ghi mới nhất trong máy!">
+        <select class="input" id="quickLvMaxClips" style="flex:0.8;min-width:155px;">
+          <option value="3">Cắt 3 clip (6 video)</option>
+          <option value="5" selected>Cắt 5 clip (10 video)</option>
+          <option value="10">Cắt 10 clip (20 video)</option>
+          <option value="25">Cắt 25 clip (50 video)</option>
+        </select>
+        <select class="input" id="quickLvProductKey" style="flex:1.1;min-width:210px;">
+          <option value="AUTO" selected>🤖 AI Tự nhận diện giọng nói (8 SP)</option>
+          <option value="marial_gel">Marial Gel Ý (Bao tử & Trào ngược)</option>
+          <option value="ginkgo_bonao">Ginkgo Biloba Mỹ (Dưỡng não, Tiền đình)</option>
+          <option value="canxi_mason">Canxi hữu cơ Mỹ Mason (Tê tay, chuột rút)</option>
+          <option value="bokhop_chondro">Bổ khớp Chondro-Aid Pháp (Đau khớp gối)</option>
+          <option value="omega3_arko">Dầu cá Omega 3 Pháp (Mỡ máu, khô mắt)</option>
+          <option value="vitamin_azinc">Vitamin Azinc 3B Pháp (Mệt mỏi, thần kinh tọa)</option>
+          <option value="collagen_chalpha">Collagen sụn khớp CH-Alpha Đức</option>
+          <option value="biotin_forcapil">Biotin Forcapil Pháp (Rụng tóc)</option>
+        </select>
+        <button class="btn btn-gold" style="padding:10px 18px;font-size:13.5px;" onclick="startQuickBatchEdit(false, this)">
+          🚀 Chạy Tự Động Toàn Trình Ngay
+        </button>
+        <button class="btn btn-green" style="padding:10px 14px;font-size:13px;" onclick="startQuickBatchEdit(true, this)">
+          ⚡ Tự Lấy Phiên Ghi Mới Nhất
+        </button>
+      </div>
+      <div style="background:#090d16;border:1px solid #1e293b;border-radius:8px;padding:8px 12px;">
+        <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px;">
+          <span id="quickEditorStep" style="color:#fde047;font-weight:700;">Sẵn sàng nhận link thu mới để chạy tự động toàn trình.</span>
+          <span id="quickEditorPctNum" style="color:#4ade80;font-weight:800;">0%</span>
+        </div>
+        <div style="width:100%;height:7px;background:#1e293b;border-radius:99px;overflow:hidden;">
+          <div id="quickEditorBar" style="width:0%;height:100%;background:linear-gradient(90deg,#facc15,#22c55e);transition:width 0.3s;"></div>
+        </div>
+      </div>
+    </div>
+
     <div class="grid-2">
       <!-- HỘP TRÁI: KẾT NỐI OPPO A57 & CHUYỂN TÀI KHOẢN -->
       <div class="card">
@@ -1805,11 +1851,25 @@ async function loadStatus() {
       sw4.textContent = pOn ? 'ĐANG BẬT' : 'ĐANG TẮT';
     }
 
-    // Tab 3 Editor progress
+    // Tab 1 & Tab 3 Editor progress
     if (d.editor) {
-      document.getElementById('editorStepBox').textContent = d.editor.current_step || 'Sẵn sàng';
-      document.getElementById('editorPctBox').textContent = (d.editor.progress_pct || 0) + '%';
-      document.getElementById('editorBar').style.width = (d.editor.progress_pct || 0) + '%';
+      const stepTxt = d.editor.current_step || d.editor.progress_text || 'Sẵn sàng';
+      const pctVal = (d.editor.progress_pct || 0);
+      document.getElementById('editorStepBox').textContent = stepTxt;
+      document.getElementById('editorPctBox').textContent = pctVal + '%';
+      document.getElementById('editorBar').style.width = pctVal + '%';
+
+      const qs = document.getElementById('quickEditorStep');
+      const qp = document.getElementById('quickEditorPctNum');
+      const qb = document.getElementById('quickEditorBar');
+      const qBadge = document.getElementById('quickEditorPct');
+      if (qs) qs.textContent = stepTxt;
+      if (qp) qp.textContent = pctVal + '%';
+      if (qb) qb.style.width = pctVal + '%';
+      if (qBadge) {
+        qBadge.textContent = d.editor.is_running ? `⏳ ĐANG CHẠY (${pctVal}%)` : '✓ SẴN SÀNG';
+        qBadge.style.background = d.editor.is_running ? '#854d0e' : '#166534';
+      }
     }
 
     // Update Smart Flow & Stepper
@@ -1984,11 +2044,25 @@ function changeItemProduct(itemId, newProductKey, selectEl) {
     null
   );
 }
+function startQuickBatchEdit(useLatestLocal, btn) {
+  let url = document.getElementById('quickLvUrlInput').value.trim();
+  if (useLatestLocal || !url) {
+    url = 'AUTO';
+  }
+  const maxC = document.getElementById('quickLvMaxClips').value;
+  const pKey = document.getElementById('quickLvProductKey').value;
+  runAction(
+    `Chạy Tự Động Toàn Trình (${maxC} Clip -> Cắt Bìa Vàng -> Lên Lịch -> Đẩy Lưu Nháp Oppo A57)`,
+    "Đang lấy clip, nhận diện giọng nói 8 sản phẩm, đóng bìa vàng 2 kênh và tự đẩy bài đầu tiên sang Oppo A57...",
+    "/api/fetch_edit_new_link",
+    {livevault_url: url, max_clips: maxC, product_key: pKey},
+    btn
+  );
+}
 function startBatchEdit(btn) {
-  const url = document.getElementById('lvUrlInput').value.trim();
+  const url = document.getElementById('lvUrlInput').value.trim() || 'AUTO';
   const maxC = document.getElementById('lvMaxClips').value;
   const pKey = document.getElementById('lvProductKey').value;
-  if (!url) { showToast("Vui lòng dán link LiveVault cần thu và edit video mới!", true); return; }
   runAction(
     `Thu & Edit ${maxC} Clip từ LiveVault`,
     "Đang khởi chạy tiến trình tải clip, nhận diện giọng nói và đóng bìa vàng...",
@@ -2021,17 +2095,58 @@ setInterval(loadStatus, 3000);
 </html>"""
 
 
+def ensure_livevault_recorder_8090_running():
+    """Tu dong khoi chay LiveVault Recorder & iPhone Delivery (cong 8090) trong D:\\tiktok\\Tiktok_Tooler\\Luu neu chua chay."""
+    import socket
+    try:
+        s = socket.create_connection(("127.0.0.1", 8090), timeout=0.8)
+        s.close()
+        return True
+    except Exception:
+        pass
+    luu_dir = Path(r"D:\tiktok\Tiktok_Tooler\Luu")
+    if not luu_dir.exists():
+        return False
+    try:
+        log_f = open(str(DATA_DIR / "livevault_8090.log"), "a", encoding="utf-8")
+        creation_flags = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+        env = os.environ.copy()
+        env["PYTHONUTF8"] = "1"
+        subprocess.Popen(
+            ["py", "-3.12", "-u", "-m", "tiktok_recorder.colab_setup"],
+            cwd=str(luu_dir),
+            env=env,
+            stdout=log_f,
+            stderr=log_f,
+            creationflags=creation_flags,
+        )
+        push_live_log("✓ Đã tự động khởi chạy dịch vụ thu video LiveVault Recorder (cổng 8090 & Telegram Bot).")
+        return True
+    except Exception as e:
+        push_live_log(f"Lưu ý khởi chạy LiveVault 8090: {e}")
+        return False
+
+
 def main():
     init_db()
-    # Khoi chay local TLSv1.2 Rescue Proxy (127.0.0.1:8098 -> https://192.168.1.11:443) cho Dell iDRAC7 R620
+    # 1. Tu dong bat LiveVault Recorder (cong 8090)
+    ensure_livevault_recorder_8090_running()
+
+    # 2. Khoi chay local TLSv1.2 Rescue Proxy (127.0.0.1:8098 -> https://192.168.1.11:443) cho Dell iDRAC7 R620
     try:
         idrac_srv = ThreadingHTTPServer(("127.0.0.1", IDRAC_PROXY_PORT), IdracRescueProxyHandler)
         threading.Thread(target=idrac_srv.serve_forever, daemon=True).start()
     except Exception as e:
         print("Cảnh báo cổng iDRAC Proxy 8098:", e)
 
-    # Tu dong bat luon Cloudflare Tunnel tren Laptop (master.phamvuong.io.vn & idrac.phamvuong.io.vn -> 192.168.1.11)
+    # 3. Tu dong bat luon Cloudflare Tunnel tren Laptop (master.phamvuong.io.vn & idrac.phamvuong.io.vn -> 192.168.1.11)
     control_laptop_cloudflare_tunnel(enable=True)
+
+    # 4. Dam bao bo hen gio Tu Dong 1 Tieng/Video luon duoc BAT
+    cfg = get_settings()
+    if not cfg.get("auto_scheduler_enabled", True):
+        cfg["auto_scheduler_enabled"] = True
+        SETTINGS_FILE.write_text(json.dumps(cfg, ensure_ascii=False, indent=2), encoding="utf-8")
 
     t = threading.Thread(target=background_scheduler_loop, daemon=True)
     t.start()

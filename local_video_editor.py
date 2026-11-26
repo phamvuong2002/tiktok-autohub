@@ -45,12 +45,21 @@ RAW_TMP_DIR.mkdir(parents=True, exist_ok=True)
 
 EDITOR_STATUS = {
     "is_running": False,
-    "progress_text": "Sẵn sàng nhận link LiveVault mới để thu, cắt & edit loạt video mới.",
+    "progress_text": "Sẵn sàng nhận link thu mới (LiveVault /d/... hoặc link TikTok Live) để tự động cắt, edit & đẩy Lưu Nháp lên Oppo A57.",
+    "current_step": "Sẵn sàng nhận link thu mới để chạy tự động toàn trình.",
+    "progress_pct": 0,
     "processed_clips": 0,
     "total_clips": 0,
     "created_videos": 0,
     "last_link": "",
 }
+
+
+def set_editor_progress(text: str, pct: int = None):
+    EDITOR_STATUS["progress_text"] = text
+    EDITOR_STATUS["current_step"] = text
+    if pct is not None:
+        EDITOR_STATUS["progress_pct"] = max(0, min(100, int(pct)))
 
 PRODUCT_CATALOG = {
     "bokhop_chondro": {
@@ -418,72 +427,189 @@ def render_single_channel_video(
     return r.returncode == 0 and out_mp4.exists() and out_mp4.stat().st_size > 50000
 
 
+def _discover_from_local_iphone_db(max_clips: int = 5, specific_clip: str = "") -> list[dict]:
+    """Doc truc tiep cac clip .mp4 moi nhat tu D:\\TiktokToolerData\\recorder\\iphone_delivery.db tren Laptop."""
+    clips = []
+    seen = set()
+    for db_cand in [
+        Path(r"D:\TiktokToolerData\recorder\iphone_delivery.db"),
+        Path(r"D:\tiktok\recorder_root\iphone_delivery.db"),
+    ]:
+        if not db_cand.exists():
+            continue
+        try:
+            conn = sqlite3.connect(str(db_cand))
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT segment_id, segment_path, size_bytes, file_ready_at FROM telegram_segments ORDER BY file_ready_at DESC LIMIT 80"
+            )
+            for seg_id, seg_path, sz, ready_at in cur.fetchall():
+                p = Path(seg_path)
+                if seg_id not in seen and p.exists() and p.stat().st_size > 50000:
+                    seen.add(seg_id)
+                    entry = {"clip_id": seg_id, "url": p.as_uri(), "local_path": str(p), "name": p.name}
+                    if specific_clip and (specific_clip in seg_id or specific_clip in p.name):
+                        clips.insert(0, entry)
+                    else:
+                        clips.append(entry)
+            conn.close()
+        except Exception:
+            pass
+    if specific_clip:
+        exact = [c for c in clips if specific_clip in c["clip_id"] or specific_clip in c.get("name", "")]
+        if exact:
+            return exact[:max_clips]
+    return clips[:max_clips]
+
+
 def discover_clips_from_livevault_link(livevault_url: str, max_clips: int = 5) -> list[dict]:
-    """Doc danh sach clip tu link LiveVault (/d/<token> hoac ?clip=<sha256>)."""
-    norm_url = normalize_livevault_url(livevault_url)
+    """
+    Ho tro 3 loai link thu:
+    1. 'AUTO' hoac 'LOCAL': Lay truc tiep phien ghi moi nhat trong D:\\TiktokToolerData\\recorder\\iphone_delivery.db
+    2. Link LiveVault (/d/<token> hoac ?session=...&clip=<sha256>): Goi JSON API /d/<token>/clips?limit=60 + anh xa file local
+    3. Link TikTok Live truc tiep (https://www.tiktok.com/@.../live): Goi record_live thu clip 60s roi lay clip moi nhat
+    """
+    raw_input = (livevault_url or "").strip()
+    if not raw_input or raw_input.upper() in ("AUTO", "LOCAL", "LATEST"):
+        return _discover_from_local_iphone_db(max_clips=max_clips)
+
+    # Neu nguoi dung dan link TikTok Live truc tiep (vd: https://www.tiktok.com/@.../live)
+    if "tiktok.com/" in raw_input.lower() or raw_input.startswith("@"):
+        set_editor_progress(f"🔴 Đang kết nối và thu trực tiếp Livestream TikTok ({raw_input})...", 10)
+        luu_dir = Path(r"D:\tiktok\Tiktok_Tooler\Luu")
+        out_root = Path(r"D:\TiktokToolerData\recorder")
+        if luu_dir.exists():
+            try:
+                # Thu 1 doan 60s (hoac theo max_clips) bang record_live.py
+                cmd = [
+                    "py", "-3.12", "-c",
+                    (
+                        "import sys; sys.path.insert(0, r'D:\\tiktok\\Tiktok_Tooler\\Luu'); "
+                        "import record_live; "
+                        f"record_live.run_with_config_overrides(stream_url={json.dumps(raw_input)}, "
+                        "output_dir=r'D:\\TiktokToolerData\\recorder', segment_minutes=1, segment_duration_seconds=60, "
+                        "max_retries=2, telegram_enabled=False)"
+                    ),
+                ]
+                proc = subprocess.Popen(cmd, cwd=str(luu_dir))
+                # Doi cho den khi co file .mp4 moi duoc tao hoac toi da 75s * max_clips
+                wait_limit = min(150, 75 * max(1, min(max_clips, 2)))
+                t0 = time.time()
+                while time.time() - t0 < wait_limit:
+                    if proc.poll() is not None:
+                        break
+                    time.sleep(3)
+                try:
+                    proc.terminate()
+                except Exception:
+                    pass
+            except Exception:
+                pass
+        # Quet file .mp4 moi nhat trong D:\TiktokToolerData\recorder
+        if out_root.exists():
+            mp4s = sorted(
+                [p for p in out_root.rglob("*.mp4") if p.stat().st_size > 100000 and "tmp" not in str(p).lower()],
+                key=lambda p: p.stat().st_mtime,
+                reverse=True,
+            )
+            import hashlib
+            res = []
+            for p in mp4s[:max_clips]:
+                cid = hashlib.sha256(str(p).encode("utf-8")).hexdigest()
+                res.append({"clip_id": cid, "url": p.as_uri(), "local_path": str(p), "name": p.name})
+            if res:
+                return res
+
+    norm_url = normalize_livevault_url(raw_input)
     parsed = urllib.parse.urlparse(norm_url)
     qs = urllib.parse.parse_qs(parsed.query)
-    base_dir_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path.rstrip('/')}/"
+    specific_clip = qs.get("clip", [""])[0]
+    specific_session = qs.get("session", [""])[0]
 
-    html = urllib.request.urlopen(norm_url, timeout=10).read().decode("utf-8", errors="replace")
-
-    # Tim cac link tai file .mp4 hoac ?clip=<sha256> trong trang LiveVault
     clips = []
     seen = set()
 
-    # Neu nguoi dung dan link co san ?clip=<id> va chi chon 1 clip
-    specific_clip = qs.get("clip", [""])[0]
+    # 1. Neu link co dang /d/<token>, goi truc tiep JSON API /d/<token>/clips?limit=60 cua LiveVault PhoneServer!
+    m_tok = re.search(r"(/d/[A-Za-z0-9_-]+)", parsed.path)
+    if m_tok:
+        token_prefix = f"{parsed.scheme}://{parsed.netloc}{m_tok.group(1)}/"
+        api_qs = ["limit=60"]
+        if specific_session:
+            api_qs.append(f"session={urllib.parse.quote(specific_session)}")
+        if specific_clip:
+            api_qs.append(f"clip={urllib.parse.quote(specific_clip)}")
+        clips_api_url = f"{token_prefix}clips?{'&'.join(api_qs)}"
+        try:
+            raw_json = urllib.request.urlopen(clips_api_url, timeout=8).read().decode("utf-8", errors="replace")
+            page_data = json.loads(raw_json)
+            # Map local paths from iphone_delivery.db for instant 0.05s copy if available
+            local_map = {c["clip_id"]: c.get("local_path") for c in _discover_from_local_iphone_db(max_clips=80)}
+            for cobj in page_data.get("clips", []):
+                cid = cobj.get("id", "")
+                if cid and cid not in seen:
+                    seen.add(cid)
+                    entry = {
+                        "clip_id": cid,
+                        "url": f"{token_prefix}file/{cid}.mp4",
+                        "local_path": local_map.get(cid),
+                        "name": cobj.get("name", f"{cid[:10]}.mp4"),
+                    }
+                    if specific_clip and cid == specific_clip:
+                        clips.insert(0, entry)
+                    else:
+                        clips.append(entry)
+        except Exception:
+            pass
 
-    # Tim toan bo cap (clip_hash, download_href) trong HTML cua LiveVault
-    # LiveVault thuong co href="/d/<token>/clip/<hash>.mp4" hoac "?clip=<hash>" hoac "/stream/<hash>"
-    for m in re.finditer(r'href=["\']([^"\']*(?:clip=|/clip/|/download/|\.mp4)[^"\']*)["\']', html, re.I):
-        href = m.group(1)
-        full_href = urllib.parse.urljoin(base_dir_url, href)
-        hm = re.search(r"([a-f0-9]{32,64})", full_href)
-        cid = hm.group(1) if hm else Path(urllib.parse.urlparse(full_href).path).stem
-        if cid and cid not in seen:
-            seen.add(cid)
-            clips.append({"clip_id": cid, "url": full_href})
+    # 2. Neu JSON API /clips da tra ve danh sach clip -> Dung ngay!
+    if clips:
+        if specific_clip:
+            exact = [c for c in clips if specific_clip in c["clip_id"]]
+            if exact and max_clips == 1:
+                return exact[:1]
+        return clips[:max_clips]
 
-    # Tim them trong the <video src="..."> hoac <source src="...">
-    for m in re.finditer(r'src=["\']([^"\']+)["\']', html, re.I):
-        src = m.group(1)
-        if any(k in src for k in [".mp4", "clip", "video", "stream", "/d/"]):
-            full_src = urllib.parse.urljoin(base_dir_url, src)
-            hm = re.search(r"([a-f0-9]{32,64})", full_src)
-            cid = hm.group(1) if hm else f"clip_{int(time.time())}"
-            if specific_clip and cid == specific_clip:
-                clips.insert(0, {"clip_id": cid, "url": full_src})
-            elif cid not in seen:
+    # 3. Fallback: Quet HTML hoac doc truc tiep tu iphone_delivery.db tren dia cung Laptop
+    try:
+        base_dir_url = f"{parsed.scheme}://{parsed.netloc}{parsed.path.rstrip('/')}/"
+        html = urllib.request.urlopen(norm_url, timeout=8).read().decode("utf-8", errors="replace")
+        for m in re.finditer(r'href=["\']([^"\']*(?:clip=|/clip/|/download/|/file/|\.mp4)[^"\']*)["\']', html, re.I):
+            href = m.group(1)
+            full_href = urllib.parse.urljoin(base_dir_url, href)
+            hm = re.search(r"([a-f0-9]{32,64})", full_href)
+            cid = hm.group(1) if hm else Path(urllib.parse.urlparse(full_href).path).stem
+            if cid and cid not in seen:
                 seen.add(cid)
-                clips.append({"clip_id": cid, "url": full_src})
+                clips.append({"clip_id": cid, "url": full_href})
+    except Exception:
+        pass
 
-    if specific_clip:
-        exact = [c for c in clips if specific_clip in c["clip_id"] or specific_clip in c["url"]]
-        if exact and max_clips == 1:
-            return exact[:1]
+    if not clips:
+        return _discover_from_local_iphone_db(max_clips=max_clips, specific_clip=specific_clip)
 
     return clips[:max_clips]
 
 
-def start_batch_fetch_and_edit(livevault_url: str, max_clips: int = 5, forced_product_key: str = "AUTO") -> dict:
+def start_batch_fetch_and_edit(livevault_url: str, max_clips: int = 5, forced_product_key: str = "AUTO", auto_push_first_draft: bool = True) -> dict:
     if EDITOR_STATUS["is_running"]:
         return {"ok": False, "message": "Hệ thống đang xử lý cắt & edit một loạt video khác, vui lòng đợi hoàn tất!"}
 
-    livevault_url = (livevault_url or "").strip()
-    if not livevault_url:
-        return {"ok": False, "message": "Vui lòng dán đường link thu video LiveVault mới vào ô!"}
+    livevault_url = (livevault_url or "").strip() or "AUTO"
 
     def _worker():
+        import shutil
         EDITOR_STATUS["is_running"] = True
         EDITOR_STATUS["last_link"] = livevault_url
         EDITOR_STATUS["processed_clips"] = 0
         EDITOR_STATUS["created_videos"] = 0
         try:
-            EDITOR_STATUS["progress_text"] = f"🔍 Đang kết nối link LiveVault ({normalize_livevault_url(livevault_url)[:55]}...) để lấy danh sách clip mới..."
+            set_editor_progress(
+                f"🔍 Bước 1/5: Đang kết nối nguồn thu ({'Phiên ghi mới nhất trong máy' if livevault_url.upper()=='AUTO' else normalize_livevault_url(livevault_url)[:55]})...",
+                8,
+            )
             clips = discover_clips_from_livevault_link(livevault_url, max_clips=max_clips)
             if not clips:
-                EDITOR_STATUS["progress_text"] = "⚠️ Không tìm thấy file video (.mp4) nào trong link vừa dán. Hãy kiểm tra lại link LiveVault (/d/...)."
+                set_editor_progress("⚠️ Không tìm thấy file video (.mp4) nào trong link vừa dán. Hãy kiểm tra lại link thu (/d/...).", 0)
                 EDITOR_STATUS["is_running"] = False
                 return
 
@@ -497,31 +623,45 @@ def start_batch_fetch_and_edit(livevault_url: str, max_clips: int = 5, forced_pr
             fresh_clips = [c for c in clips if c["clip_id"] not in posted_clips]
             EDITOR_STATUS["total_clips"] = len(fresh_clips)
             if not fresh_clips:
-                EDITOR_STATUS["progress_text"] = f"🛡️ Cả {len(clips)} clip trong link này đều ĐÃ ĐƯỢC ĐĂNG hoặc LƯU NHÁP trước đây (Chặn trùng lặp 100%)!"
+                set_editor_progress(
+                    f"🛡️ Cả {len(clips)} clip trong link này đều ĐÃ ĐƯỢC ĐĂNG hoặc LƯU NHÁP trước đây (Chặn trùng lặp 100%)!",
+                    100,
+                )
                 EDITOR_STATUS["is_running"] = False
                 return
 
             new_queue_items = []
+            total_f = len(fresh_clips)
             for idx, cinfo in enumerate(fresh_clips, 1):
                 cid = cinfo["clip_id"]
                 short_id = cid[:10]
-                EDITOR_STATUS["progress_text"] = f"📥 [{idx}/{len(fresh_clips)}] Đang tải clip gốc {short_id}... từ LiveVault..."
+                base_pct = int(10 + ((idx - 1) / total_f) * 75)
+                set_editor_progress(
+                    f"📥 Bước 2/5 [{idx}/{total_f}]: Đang lấy clip gốc {cinfo.get('name', short_id)}...",
+                    base_pct + 4,
+                )
 
                 raw_mp4 = RAW_TMP_DIR / f"raw_{short_id}.mp4"
-                dl_url = cinfo["url"]
-                # Neu url la ?clip=<hash>, truy cap trang ?clip=<hash> de lay link <video src="..."> truc tiep
-                if "?clip=" in dl_url and not dl_url.lower().endswith(".mp4"):
-                    sub_html = urllib.request.urlopen(dl_url, timeout=10).read().decode("utf-8", errors="replace")
-                    sm = re.search(r'<video[^>]+src=["\']([^"\']+)["\']|<source[^>]+src=["\']([^"\']+)["\']|href=["\']([^"\']*\.mp4[^"\']*)["\']', sub_html, re.I)
-                    if sm:
-                        rel = sm.group(1) or sm.group(2) or sm.group(3)
-                        dl_url = urllib.parse.urljoin(dl_url, rel)
+                local_src = cinfo.get("local_path")
+                if local_src and Path(local_src).exists() and Path(local_src).stat().st_size > 50000:
+                    shutil.copy2(local_src, str(raw_mp4))
+                else:
+                    dl_url = cinfo["url"]
+                    if "?clip=" in dl_url and not dl_url.lower().endswith(".mp4"):
+                        sub_html = urllib.request.urlopen(dl_url, timeout=10).read().decode("utf-8", errors="replace")
+                        sm = re.search(r'<video[^>]+src=["\']([^"\']+)["\']|<source[^>]+src=["\']([^"\']+)["\']|href=["\']([^"\']*\.mp4[^"\']*)["\']', sub_html, re.I)
+                        if sm:
+                            rel = sm.group(1) or sm.group(2) or sm.group(3)
+                            dl_url = urllib.parse.urljoin(dl_url, rel)
+                    urllib.request.urlretrieve(dl_url, str(raw_mp4))
 
-                urllib.request.urlretrieve(dl_url, str(raw_mp4))
                 if not raw_mp4.exists() or raw_mp4.stat().st_size < 50000:
                     continue
 
-                EDITOR_STATUS["progress_text"] = f"🎙️ [{idx}/{len(fresh_clips)}] Đang nhận diện giọng nói Bác Chường & lọc đoạn cuối vi phạm ({short_id})..."
+                set_editor_progress(
+                    f"🎙️ Bước 3/5 [{idx}/{total_f}]: AI đang nghe lời thoại Bác Chường (8 sản phẩm) & cắt đoạn cuối vi phạm ({short_id})...",
+                    base_pct + 10,
+                )
                 pkey, tr_text, safe_end = transcribe_and_detect_product(raw_mp4, forced_product_key=forced_product_key)
                 pcat = PRODUCT_CATALOG[pkey]
 
@@ -534,8 +674,9 @@ def start_batch_fetch_and_edit(livevault_url: str, max_clips: int = 5, forced_pr
 
                     out_name = f"AUTO_{pkey}_{ch_slug}_{short_id}_{ts_tag}.mp4"
                     out_mp4 = CACHE_DIR / out_name
-                    EDITOR_STATUS["progress_text"] = (
-                        f"🎬 [{idx}/{len(fresh_clips)}] Đang cắt Hook 3.5s, xóa logo đỏ & đóng khung chữ Vàng chữ Đen cho kênh {ch}..."
+                    set_editor_progress(
+                        f"🎬 Bước 4/5 [{idx}/{total_f}]: Đang cắt Hook 3.5s, xóa chữ đỏ & đóng bìa vàng '{pcat['product_name'][:32]}' cho kênh {ch}...",
+                        base_pct + 14 + ch_idx * 4,
                     )
                     zoom = 1.02 if ch_idx == 0 else 1.04
                     speed = 1.00 if ch_idx == 0 else 1.02
@@ -562,6 +703,7 @@ def start_batch_fetch_and_edit(livevault_url: str, max_clips: int = 5, forced_pr
                             "seller_name": pcat["seller_name"],
                             "product_id": pcat["product_id"],
                             "scheduled_at": datetime.now().strftime("%H:%M · %d/%m/%Y"),
+                            "source_video": cinfo.get("name", f"clip_{short_id}.mp4"),
                             "output_video": f"output_ready/{out_name}",
                             "local_cache_path": str(out_mp4),
                             "cached_offline": True,
@@ -584,22 +726,45 @@ def start_batch_fetch_and_edit(livevault_url: str, max_clips: int = 5, forced_pr
                         existing = json.loads(LOCAL_QUEUE_FILE.read_text(encoding="utf-8"))
                     except Exception:
                         existing = []
-                # Dua loat video moi vua cat len DAU danh sach lich dang 1 tieng/video!
                 merged = new_queue_items + existing
                 LOCAL_QUEUE_FILE.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
-                EDITOR_STATUS["progress_text"] = (
-                    f"✅ HOÀN TẤT! Đã tự động thu, cắt & đóng bìa vàng chữ đen cho {EDITOR_STATUS['created_videos']} video mới "
-                    f"(từ {EDITOR_STATUS['processed_clips']} clip gốc) và đưa lên ĐẦU bảng Lịch Đăng 1 Tiếng / 1 Video bên dưới!"
+
+                # Buoc 5/5: Tu dong day ngay video dau tien cua loat moi sang Oppo A57 & Luu Nhap!
+                draft_note = ""
+                if auto_push_first_draft:
+                    try:
+                        from oppo_auto_poster import auto_save_draft_on_oppo, quick_check_oppo_connected
+                        oppo_st = quick_check_oppo_connected()
+                        if oppo_st.get("connected"):
+                            first_new = new_queue_items[0]
+                            set_editor_progress(
+                                f"📱 Bước 5/5: Đang tự động chuyển kênh {first_new['channel']}, đẩy video đầu tiên sang Oppo A57 & Lưu Nháp Tiếng Việt...",
+                                92,
+                            )
+                            d_res = auto_save_draft_on_oppo(item_id=first_new["id"], channel=first_new["channel"])
+                            draft_note = f" | 📱 Oppo A57: {d_res.get('message', '')}"
+                        else:
+                            draft_note = " | (Khi cắm Oppo A57, hệ thống sẽ tự động đẩy Lưu Nháp theo lịch 1 tiếng/video)"
+                    except Exception as de:
+                        draft_note = f" | Lưu ý đẩy nháp: {de}"
+
+                set_editor_progress(
+                    f"✅ HOÀN TẤT TOÀN TRÌNH! Đã cắt & đóng bìa vàng {EDITOR_STATUS['created_videos']} video mới "
+                    f"(từ {EDITOR_STATUS['processed_clips']} clip gốc), đưa lên ĐẦU Lịch Đăng 1 Tiếng/Video{draft_note}",
+                    100,
                 )
             else:
-                EDITOR_STATUS["progress_text"] = "⚠️ Không tạo được video mới nào từ link vừa dán."
+                set_editor_progress("⚠️ Không tạo được video mới nào từ link vừa dán.", 0)
         except Exception as e:
-            EDITOR_STATUS["progress_text"] = f"❌ Lỗi khi thu & cắt video từ link mới: {e}"
+            set_editor_progress(f"❌ Lỗi khi thu & cắt video từ link mới: {e}", 0)
         finally:
             EDITOR_STATUS["is_running"] = False
 
     threading.Thread(target=_worker, daemon=True).start()
-    return {"ok": True, "message": "Đã bắt đầu thu, cắt & edit loạt video mới trong nền!"}
+    return {
+        "ok": True,
+        "message": "🚀 Đã bắt đầu quy trình TỰ ĐỘNG TOÀN TRÌNH: Thu clip -> AI nghe sản phẩm -> FFmpeg đóng bìa vàng 2 kênh -> Đưa lên đầu lịch -> Tự đẩy sang Oppo A57 & Lưu Nháp!",
+    }
 
 
 CUSTOM_PRODUCTS_FILE = DATA_DIR / "custom_products.json"
