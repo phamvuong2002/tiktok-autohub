@@ -428,9 +428,15 @@ def render_single_channel_video(
 
 
 def _discover_from_local_iphone_db(max_clips: int = 5, specific_clip: str = "") -> list[dict]:
-    """Doc truc tiep cac clip .mp4 moi nhat tu D:\\TiktokToolerData\\recorder\\iphone_delivery.db tren Laptop."""
+    """
+    Doc truc tiep cac clip .mp4 tu D:\\TiktokToolerData\\recorder\\iphone_delivery.db tren Laptop.
+    QUAN TRONG: Chi lay duy nhat cac clip thuoc PHIEN GHI MOI NHAT (Lần ghi này - newest session),
+    tuyet doi khong lay lan sang cac phien ghi test cu truoc do!
+    """
     clips = []
     seen = set()
+    newest_session_tag = None
+
     for db_cand in [
         Path(r"D:\TiktokToolerData\recorder\iphone_delivery.db"),
         Path(r"D:\tiktok\recorder_root\iphone_delivery.db"),
@@ -441,17 +447,35 @@ def _discover_from_local_iphone_db(max_clips: int = 5, specific_clip: str = "") 
             conn = sqlite3.connect(str(db_cand))
             cur = conn.cursor()
             cur.execute(
-                "SELECT segment_id, segment_path, size_bytes, file_ready_at FROM telegram_segments ORDER BY file_ready_at DESC LIMIT 80"
+                "SELECT segment_id, segment_path, size_bytes, file_ready_at FROM telegram_segments ORDER BY file_ready_at DESC LIMIT 120"
             )
             for seg_id, seg_path, sz, ready_at in cur.fetchall():
                 p = Path(seg_path)
-                if seg_id not in seen and p.exists() and p.stat().st_size > 50000:
-                    seen.add(seg_id)
-                    entry = {"clip_id": seg_id, "url": p.as_uri(), "local_path": str(p), "name": p.name}
-                    if specific_clip and (specific_clip in seg_id or specific_clip in p.name):
-                        clips.insert(0, entry)
-                    else:
-                        clips.append(entry)
+                if seg_id in seen or not p.exists() or p.stat().st_size <= 50000:
+                    continue
+                # Xac dinh nhan phien ghi (session tag) cua clip: tiktok_live_YYYYMMDD_HHMMSS hoac thu muc job
+                m_sess = re.match(r"(tiktok_live_\d{8}_\d{6})_", p.name)
+                sess_tag = m_sess.group(1) if m_sess else str(p.parent)
+
+                if not specific_clip:
+                    if newest_session_tag is None:
+                        newest_session_tag = sess_tag
+                    elif sess_tag != newest_session_tag:
+                        # Bo qua toan bo cac phien ghi cu truoc do!
+                        continue
+
+                seen.add(seg_id)
+                entry = {
+                    "clip_id": seg_id,
+                    "url": p.as_uri(),
+                    "local_path": str(p),
+                    "name": p.name,
+                    "session_tag": sess_tag,
+                }
+                if specific_clip and (specific_clip in seg_id or specific_clip in p.name):
+                    clips.insert(0, entry)
+                else:
+                    clips.append(entry)
             conn.close()
         except Exception:
             pass
@@ -720,14 +744,17 @@ def start_batch_fetch_and_edit(livevault_url: str, max_clips: int = 5, forced_pr
                 EDITOR_STATUS["processed_clips"] = idx
 
             if new_queue_items:
-                existing = []
-                if LOCAL_QUEUE_FILE.exists():
-                    try:
-                        existing = json.loads(LOCAL_QUEUE_FILE.read_text(encoding="utf-8"))
-                    except Exception:
-                        existing = []
-                merged = new_queue_items + existing
-                LOCAL_QUEUE_FILE.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
+                # THEO YEU CAU NGUOI DUNG: Chi giu va dang DUY NHAT cac clip moi tu link thu moi nhat!
+                # Xoa bo toan bo cac video cu chua dang khoi hang cho va khoi video_cache de khong bao gio dang nham clip test cu.
+                new_fnames = {Path(x.get("output_video", "")).name for x in new_queue_items}
+                for old_mp4 in CACHE_DIR.glob("*.mp4"):
+                    if old_mp4.name not in new_fnames:
+                        try:
+                            old_mp4.unlink()
+                        except Exception:
+                            pass
+
+                LOCAL_QUEUE_FILE.write_text(json.dumps(new_queue_items, ensure_ascii=False, indent=2), encoding="utf-8")
 
                 # Buoc 5/5: Tu dong day ngay video dau tien cua loat moi sang Oppo A57 & Luu Nhap!
                 draft_note = ""

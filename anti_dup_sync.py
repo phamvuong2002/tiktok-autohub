@@ -254,15 +254,19 @@ def sync_from_r630_to_laptop_cache() -> dict:
 
     if r630_reachable and remote_queue:
         by_id = {x["id"]: x for x in local_queue}
-        merged = []
+        # Giu nguyen cac video vua cat truc tiep tren Laptop o DAU danh sach
+        remote_ids = {item["id"] for item in remote_queue}
+        local_only = [x for x in local_queue if x["id"] not in remote_ids and x.get("status") != "POSTED"]
+        merged = list(local_only)
         for item in remote_queue:
             if item.get("channel") not in ALLOWED_CHANNELS:
                 continue
             iid = item["id"]
             cid = item.get("clip_id") or iid.split("_")[1]
             ch = item.get("channel", "")
-            if iid in already_posted_ids or (cid, ch) in already_posted_clip_ch:
-                item["status"] = "POSTED"
+            # Neu clip_id da bi khoa trong posted_history (bao gom ca OLD_TEST_SKIPPED), BO QUA LUON!
+            if iid in already_posted_ids or (cid, ch) in already_posted_clip_ch or (cid, "ALL_CHANNELS") in already_posted_clip_ch:
+                continue
             elif iid in by_id and by_id[iid].get("status") in ("POSTED", "SAVED_DRAFT"):
                 item["status"] = by_id[iid].get("status")
                 if "drafted_at" in by_id[iid]:
